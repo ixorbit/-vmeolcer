@@ -9,9 +9,10 @@
     <com.github.mikephil.charting.charts.LineChart
         android:id="@+id/chart"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="300dp"
         android:layout_above="@+id/controls"
-        android:padding="10dp"/>
+        android:layout_margin="8dp"
+        android:background="@android:color/white"/>
 
     <LinearLayout
         android:id="@+id/controls"

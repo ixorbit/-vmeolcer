@@ -19,7 +19,6 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.formatter.ValueFormatter
 import java.io.File
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,19 +28,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private lateinit var chart: LineChart
-    private lateinit var dataSetX: LineDataSet
-    private lateinit var dataSetY: LineDataSet
-    private lateinit var dataSetZ: LineDataSet
     private val entriesX = ArrayList<Entry>()
     private val entriesY = ArrayList<Entry>()
     private val entriesZ = ArrayList<Entry>()
+    private lateinit var dataSetX: LineDataSet
+    private lateinit var dataSetY: LineDataSet
+    private lateinit var dataSetZ: LineDataSet
     private var startTime = 0L
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
 
     private val handler = Handler(Looper.getMainLooper())
     private val bufferSize = 500
-    private val updateInterval = 16L
+    private val updateInterval = 16L // ~60 FPS
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,31 +59,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun setupChart() {
-        configureChart()
-        chart.setNoDataText("Veri bekleniyor...")
-        chart.setNoDataTextColor(Color.GRAY)
-    }
-
-    private fun configureChart() {
+        // Başlangıçta boş dataset'ler oluştur
         dataSetX = LineDataSet(entriesX, "X Ekseni").apply {
             color = Color.RED
             setDrawCircles(false)
             lineWidth = 1.5f
-            setDrawValues(false)
         }
-
         dataSetY = LineDataSet(entriesY, "Y Ekseni").apply {
             color = Color.BLUE
             setDrawCircles(false)
             lineWidth = 1.5f
-            setDrawValues(false)
         }
-
         dataSetZ = LineDataSet(entriesZ, "Z Ekseni").apply {
             color = Color.GREEN
             setDrawCircles(false)
             lineWidth = 1.5f
-            setDrawValues(false)
         }
 
         chart.apply {
@@ -92,13 +81,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             description.isEnabled = false
             setTouchEnabled(true)
             setPinchZoom(true)
-
-            axisLeft.apply {
-                setAxisMinimum(-20f)
-                setAxisMaximum(20f)
-                granularity = 5f
-            }
-
+            setViewPortOffsets(0f, 0f, 0f, 0f) // Kenar boşluklarını kaldır
+            isAutoScaleMinMaxEnabled = true // Otomatik ölçeklendirme
+            setVisibleXRangeMaximum(30f) // 30 saniyelik görünür alan
+            setHardwareAccelerationEnabled(false) // Donanım hızlandırmayı kapat
+            setDrawMarkers(false) // Marker'ları kapat
             xAxis.apply {
                 position = XAxis.XAxisPosition.BOTTOM
                 granularity = 1f
@@ -107,6 +94,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         return "${value.toInt()}s"
                     }
                 }
+            }
+
+            axisLeft.apply {
+                setAxisMinimum(-20f)
+                setAxisMaximum(20f)
+                granularity = 5f
             }
 
             axisRight.isEnabled = false
@@ -120,15 +113,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val showDataButton = findViewById<Button>(R.id.showDataButton)
 
         startButton.setOnClickListener {
-            if (!isRunning) {
-                startDataCollection()
-            }
+            if (!isRunning) startDataCollection()
         }
 
         stopButton.setOnClickListener {
-            if (isRunning) {
-                stopDataCollection()
-            }
+            if (isRunning) stopDataCollection()
         }
 
         showDataButton.setOnClickListener {
@@ -142,13 +131,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         dbHelper.clearAllData()
         resetChartData()
         handler.post(updateRunnable)
-
-        // Başlangıç veri noktası ekle
-        runOnUiThread {
-            entriesX.add(Entry(0f, 0f))
-            entriesY.add(Entry(0f, 0f))
-            entriesZ.add(Entry(0f, 0f))
-        }
     }
 
     private fun stopDataCollection() {
@@ -161,7 +143,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         entriesX.clear()
         entriesY.clear()
         entriesZ.clear()
-        chart.data?.clearValues()
+        chart.clearValues()
         chart.invalidate()
     }
 
@@ -173,15 +155,39 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             entriesY.add(Entry(currentTime, y))
             entriesZ.add(Entry(currentTime, z))
 
-            // Veri setlerini manuel güncelle
-            dataSetX.notifyDataSetChanged()
-            dataSetY.notifyDataSetChanged()
-            dataSetZ.notifyDataSetChanged()
+            if (entriesX.size > bufferSize) {
+                entriesX.removeAt(0)
+                entriesY.removeAt(0)
+                entriesZ.removeAt(0)
+            }
 
-            // Grafik sınırlarını otomatik ayarla
+            // Grafik görünür alanını güncelle
             chart.xAxis.axisMaximum = entriesX.last().x + 5f
             chart.data?.notifyDataChanged()
             chart.invalidate()
+
+            // Grafik sınırlarını dinamik ayarla
+            chart.xAxis.axisMinimum = entriesX.first().x
+            chart.xAxis.axisMaximum = entriesX.last().x
+
+            // Y ekseni için otomatik ölçek
+            chart.axisLeft.resetAxisMinimum()
+            chart.axisLeft.resetAxisMaximum()
+
+            // Görünür alanı son veriye kaydır
+            chart.moveViewToX(entriesX.last().x)
+
+        }
+    }
+
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            if (isRunning && entriesX.size > 5) { // En az 5 veri noktası
+                chart.data?.notifyDataChanged()
+                chart.notifyDataSetChanged()
+                chart.invalidate()
+            }
+            handler.postDelayed(this, updateInterval)
         }
     }
 
@@ -202,7 +208,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         }
                     }
                 }
-            } catch (e: IOException) {
+            } catch (e: Exception) {
                 Log.e("MainActivity", "Dosya hatası: ${e.message}")
             }
         }.start()
@@ -216,7 +222,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             dbHelper.addSensorData(System.currentTimeMillis(), x, y, z)
             updateChart(x, y, z)
-            Log.d("SENSOR_DATA", "X: $x, Y: $y, Z: $z")
         }
     }
 
@@ -229,20 +234,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         sensorManager.unregisterListener(this)
         handler.removeCallbacks(updateRunnable)
-    }
-
-    private val updateRunnable = object : Runnable {
-        override fun run() {
-            if (entriesX.size > 1) {
-                chart.data?.let {
-                    it.notifyDataChanged()
-                    chart.notifyDataSetChanged()
-                    chart.moveViewToX(it.xMax)
-                    chart.invalidate()
-                }
-            }
-            handler.postDelayed(this, updateInterval)
-        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
