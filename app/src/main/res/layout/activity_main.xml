@@ -6,21 +6,18 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <com.github.mikephil.charting.charts.LineChart
+    <com.jjoe64.graphview.GraphView
         android:id="@+id/chart"
         android:layout_width="match_parent"
         android:layout_height="300dp"
         android:layout_above="@+id/controls"
-        android:layout_margin="8dp"
-        android:background="@android:color/white"/>
+        android:layout_marginBottom="342dp" />
 
     <LinearLayout
         android:id="@+id/controls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:background="@android:color/white"
-        android:elevation="8dp"
         android:orientation="horizontal"
         android:padding="16dp">
 
@@ -49,43 +46,6 @@
             android:layout_weight="1"
             android:text="Verileri Göster"
             android:backgroundTint="@color/purple_500"/>
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_above="@id/controls"
-        android:layout_alignParentEnd="true"
-        android:layout_margin="8dp"
-        android:background="@drawable/legend_background"
-        android:orientation="vertical"
-        android:padding="8dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="X: Kırmızı"
-            android:textColor="@android:color/black"
-            android:textSize="12sp"
-            app:drawableStartCompat="@drawable/red_dot"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Y: Mavi"
-            android:textColor="@android:color/black"
-            android:textSize="12sp"
-            app:drawableStartCompat="@drawable/blue_dot"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Z: Yeşil"
-            android:textColor="@android:color/black"
-            android:textSize="12sp"
-            app:drawableStartCompat="@drawable/green_dot"/>
     </LinearLayout>
 
 </RelativeLayout>
