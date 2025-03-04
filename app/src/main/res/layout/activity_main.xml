@@ -7,11 +7,13 @@
     tools:context=".MainActivity">
 
     <com.jjoe64.graphview.GraphView
-        android:id="@+id/chart"
+        android:id="@+id/graph"
         android:layout_width="match_parent"
-        android:layout_height="300dp"
-        android:layout_above="@+id/controls"
-        android:layout_marginBottom="342dp" />
+        android:layout_height="0dp"
+        android:layout_above="@id/controls"
+        android:layout_alignParentTop="true"
+        android:layout_weight="1"
+        android:padding="10dp" />
 
     <LinearLayout
         android:id="@+id/controls"

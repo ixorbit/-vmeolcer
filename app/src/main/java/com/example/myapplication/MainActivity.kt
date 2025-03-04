@@ -7,241 +7,154 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
-import com.github.mikephil.charting.charts.LineChart
-import com.github.mikephil.charting.components.Legend
-import com.github.mikephil.charting.components.XAxis
-import com.github.mikephil.charting.components.YAxis
-import com.github.mikephil.charting.data.Entry
-import com.github.mikephil.charting.data.LineData
-import com.github.mikephil.charting.data.LineDataSet
-import com.github.mikephil.charting.formatter.ValueFormatter
+import androidx.recyclerview.widget.RecyclerView
+import com.jjoe64.graphview.GraphView
+import com.jjoe64.graphview.series.DataPoint
+import com.jjoe64.graphview.series.LineGraphSeries
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.max
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
-
-    // Grafik Konfigürasyonları
-    private val Y_AXIS_MIN = -20f
-    private val Y_AXIS_MAX = 20f
-    private val VISIBLE_X_RANGE = 30f
-    private val MAX_DATA_POINTS = 500
-    private val UPDATE_INTERVAL_MS = 16L // 60 FPS
-
-    // Sensör ve Grafik Bileşenleri
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
-    private lateinit var chart: LineChart
-    private lateinit var dbHelper: DatabaseHelper
-
-    // Veri Kümeleri
-    private val entriesX = ArrayList<Entry>()
-    private val entriesY = ArrayList<Entry>()
-    private val entriesZ = ArrayList<Entry>()
-    private lateinit var dataSetX: LineDataSet
-    private lateinit var dataSetY: LineDataSet
-    private lateinit var dataSetZ: LineDataSet
-
-    // Zaman Yönetimi
-    private var startTime = 0L
+    private lateinit var graph: GraphView
+    private lateinit var seriesX: LineGraphSeries<DataPoint>
+    private lateinit var seriesY: LineGraphSeries<DataPoint>
+    private lateinit var seriesZ: LineGraphSeries<DataPoint>
+    private var lastXValue = 0.0
+    private var lastYValue = 0.0
+    private var lastZValue = 0.0
     private var isRunning = false
-    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var dbHelper: DatabaseHelper
+    private lateinit var recyclerView: RecyclerView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        initializeComponents()
-        configureChart()
-        setupButtons()
-    }
+        graph = findViewById(R.id.graph)
+        seriesX = LineGraphSeries()
+        seriesY = LineGraphSeries()
+        seriesZ = LineGraphSeries()
+        graph.addSeries(seriesX)
+        graph.addSeries(seriesY)
+        graph.addSeries(seriesZ)
 
-    private fun initializeComponents() {
-        chart = findViewById(R.id.chart)
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val graphWidth = screenWidth / 1
+        val graphHeight = 2000
+
+        val layoutParams = graph.layoutParams
+        layoutParams.width = graphWidth
+        layoutParams.height = graphHeight
+        graph.layoutParams = layoutParams
+
+        seriesX.setColor(Color.RED)
+        seriesY.setColor(Color.BLUE)
+        seriesZ.setColor(Color.YELLOW)
+
+        graph.viewport.isScalable = true
+        graph.viewport.isScrollable = true
+
+        val minX = 0.0
+        val maxX = 100.0
+        graph.viewport.setMinX(minX)
+        graph.viewport.setMaxX(maxX)
+
+        val startButton = findViewById<Button>(R.id.startButton)
+        val stopButton = findViewById<Button>(R.id.stopButton)
+        val showDataButton = findViewById<Button>(R.id.showDataButton)
+
         dbHelper = DatabaseHelper(this)
-    }
 
-    private fun configureChart() {
-        // Veri Setleri Oluşturma
-        dataSetX = createDataSet(entriesX, "X Ekseni", Color.RED)
-        dataSetY = createDataSet(entriesY, "Y Ekseni", Color.BLUE)
-        dataSetZ = createDataSet(entriesZ, "Z Ekseni", Color.GREEN)
 
-        // Grafik Genel Ayarları
-        with(chart) {
-            data = LineData(dataSetX, dataSetY, dataSetZ)
-            description.isEnabled = false
-            setTouchEnabled(true)
-            setPinchZoom(true)
-            setDrawGridBackground(false)
-            setViewPortOffsets(50f, 30f, 50f, 30f)
-
-            // X Ekseni Ayarları
-            xAxis.apply {
-                position = XAxis.XAxisPosition.BOTTOM
-                granularity = 1f
-                axisMinimum = 0f
-                valueFormatter = TimeAxisFormatter()
-                setDrawGridLines(false)
-                textColor = Color.WHITE
+        startButton.setOnClickListener {
+            if (!isRunning) {
+                isRunning = true
+                dbHelper.clearAllData()
             }
-
-            // Y Ekseni Ayarları
-            axisLeft.apply {
-                axisMinimum = Y_AXIS_MIN
-                axisMaximum = Y_AXIS_MAX
-                granularity = 5f
-                textColor = Color.WHITE
-            }
-            axisRight.isEnabled = false
-
-            // Legend Ayarları
-            legend.apply {
-                verticalAlignment = Legend.LegendVerticalAlignment.TOP
-                horizontalAlignment = Legend.LegendHorizontalAlignment.RIGHT
-                orientation = Legend.LegendOrientation.HORIZONTAL
-                textColor = Color.WHITE
-            }
-
-            setVisibleXRangeMaximum(VISIBLE_X_RANGE)
-            animateXY(1000, 1000)
-        }
-    }
-
-    private fun createDataSet(entries: ArrayList<Entry>, label: String, color: Int): LineDataSet {
-        return LineDataSet(entries, label).apply {
-            this.color = color
-            setDrawCircles(false)
-            lineWidth = 1.5f
-            setDrawValues(false)
-            mode = LineDataSet.Mode.LINEAR
-        }
-    }
-
-    private fun setupButtons() {
-        findViewById<Button>(R.id.startButton).setOnClickListener {
-            if (!isRunning) startDataCollection()
         }
 
-        findViewById<Button>(R.id.stopButton).setOnClickListener {
-            if (isRunning) stopDataCollection()
-        }
-
-        findViewById<Button>(R.id.showDataButton).setOnClickListener {
-            startActivity(Intent(this, DataListActivity::class.java))
-        }
-    }
-
-    private fun startDataCollection() {
-        isRunning = true
-        startTime = System.currentTimeMillis()
-        dbHelper.clearAllData()
-        resetChart()
-        handler.post(updateRunnable)
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
-    }
-
-    private fun stopDataCollection() {
-        isRunning = false
-        handler.removeCallbacks(updateRunnable)
-        sensorManager.unregisterListener(this)
-        saveDataToFile()
-    }
-
-    private fun resetChart() {
-        entriesX.clear()
-        entriesY.clear()
-        entriesZ.clear()
-        chart.clear()
-        chart.invalidate()
-    }
-
-    private val updateRunnable = object : Runnable {
-        override fun run() {
+        stopButton.setOnClickListener{
             if (isRunning) {
-                updateChartView()
-                handler.postDelayed(this, UPDATE_INTERVAL_MS)
-            }
-        }
-    }
+                isRunning = false
+                val timestamp = System.currentTimeMillis()
+                val fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date(timestamp)) + ".txt"
+                val file = File(getExternalFilesDir(null), fileName)
+                try {
+                    if (!file.exists()){
+                        file.createNewFile() // Dosya yoksa oluştur
+                    }
+                } catch (e: IOException) {
+                    Log.e("MainActivity", "Dosya oluşturma hatası: ${e.message}")
+                }
+                val sensorDataList = dbHelper.getAllSensorData()
 
-    private fun updateChartView() {
-        val lastX = entriesX.lastOrNull()?.x ?: 0f
-        chart.moveViewToX(lastX)
-        chart.notifyDataSetChanged()
-        chart.invalidate()
-    }
-
-    override fun onSensorChanged(event: SensorEvent) {
-        if (!isRunning || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
-
-        val timestamp = System.currentTimeMillis()
-        val x = event.values[0].coerceIn(Y_AXIS_MIN, Y_AXIS_MAX)
-        val y = event.values[1].coerceIn(Y_AXIS_MIN, Y_AXIS_MAX)
-        val z = event.values[2].coerceIn(Y_AXIS_MIN, Y_AXIS_MAX)
-
-        runOnUiThread {
-            val timeSeconds = (timestamp - startTime).toFloat() / 1000f
-            addDataPoint(timeSeconds, x, y, z)
-            dbHelper.addSensorData(timestamp, x, y, z)
-        }
-    }
-
-    private fun addDataPoint(time: Float, x: Float, y: Float, z: Float) {
-        addEntry(entriesX, dataSetX, time, x)
-        addEntry(entriesY, dataSetY, time, y)
-        addEntry(entriesZ, dataSetZ, time, z)
-
-        chart.data?.notifyDataChanged()
-        chart.xAxis.axisMaximum = max(chart.xAxis.axisMaximum, time)
-        chart.xAxis.axisMinimum = max(0f, time - VISIBLE_X_RANGE)
-    }
-
-    private fun addEntry(entries: MutableList<Entry>, dataSet: LineDataSet, x: Float, y: Float) {
-        entries.add(Entry(x, y))
-        if (entries.size > MAX_DATA_POINTS) {
-            entries.removeAt(0)
-            dataSet.notifyDataSetChanged()
-        }
-    }
-
-    private fun saveDataToFile() {
-        Thread {
-            try {
-                val fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
-                    .format(Date()) + ".csv"
-
-                File(getExternalFilesDir(null), fileName).bufferedWriter().use { writer ->
-                    dbHelper.getAllSensorData().forEach {
-                        writer.write("${it.timestamp},${it.x},${it.y},${it.z}\n")
+                // Verileri doğrudan 'file' değişkeni tarafından temsil edilen dosyaya yaz
+                file.bufferedWriter().use { out ->
+                    sensorDataList.forEach { sensorData ->
+                        out.write("${sensorData.timestamp},${sensorData.x},${sensorData.y},${sensorData.z}\n")
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Veri kaydetme hatası: ${e.localizedMessage}")
             }
-        }.start()
+        }
+
+        showDataButton.setOnClickListener {
+            val intent = Intent(this, DataListActivity::class.java) // DataListActivity'yi aç
+            startActivity(intent)
+        }
+
+
     }
 
-    private inner class TimeAxisFormatter : ValueFormatter() {
-        override fun getFormattedValue(value: Float): String {
-            return "${abs(value.toInt())}s"
+    private fun updateGraph(x: Float, y: Float, z: Float) {
+        seriesX.appendData(DataPoint(lastXValue++, x.toDouble()), true, 100)
+        seriesY.appendData(DataPoint(lastYValue++, y.toDouble()), true, 100)
+        seriesZ.appendData(DataPoint(lastZValue++, z.toDouble()), true, 100)
+
+        val viewportWidth = 20.0
+        val minX = if (lastXValue > viewportWidth) lastXValue - viewportWidth else 0.0
+        val maxX = if (lastXValue > viewportWidth) lastXValue else viewportWidth
+
+        graph.viewport.isXAxisBoundsManual = true
+        graph.viewport.setMinX(minX)
+        graph.viewport.setMaxX(maxX)
+
+        dbHelper.addSensorData(System.currentTimeMillis(), x, y, z)
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Do nothing
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (isRunning && event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+            Log.d("SENSOR_DATA", "X: $x, Y: $y, Z: $z")
+            updateGraph(x, y, z)
+            dbHelper.addSensorData(System.currentTimeMillis(), x, y, z)
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    override fun onResume() {
+        super.onResume()
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+    }
 
     override fun onPause() {
         super.onPause()
-        if (isRunning) stopDataCollection()
+        sensorManager.unregisterListener(this)
     }
 }
