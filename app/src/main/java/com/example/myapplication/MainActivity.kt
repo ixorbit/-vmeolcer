@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.RecyclerView
 import com.jjoe64.graphview.GraphView
 import com.jjoe64.graphview.series.DataPoint
 import com.jjoe64.graphview.series.LineGraphSeries
@@ -32,7 +31,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastZValue = 0.0
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
-    private lateinit var recyclerView: RecyclerView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

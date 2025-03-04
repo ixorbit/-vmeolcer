@@ -9,13 +9,13 @@ import android.database.sqlite.SQLiteOpenHelper
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
-        private const val DATABASE_VERSION = 1
-        private const val DATABASE_NAME = "SensorData.db"
-        private const val TABLE_NAME = "sensor_data"
-        private const val COLUMN_TIMESTAMP = "timestamp"
-        private const val COLUMN_X = "x"
-        private const val COLUMN_Y = "y"
-        private const val COLUMN_Z = "z"
+        const val DATABASE_VERSION = 1
+        const val DATABASE_NAME = "SensorData.db"
+        const val TABLE_NAME = "sensor_data"
+        const val COLUMN_TIMESTAMP = "timestamp"
+        const val COLUMN_X = "x"
+        const val COLUMN_Y = "y"
+        const val COLUMN_Z = "z"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
