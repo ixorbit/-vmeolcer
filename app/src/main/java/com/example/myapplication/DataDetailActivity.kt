@@ -3,96 +3,114 @@ package com.example.myapplication
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
-import com.github.mikephil.charting.formatter.ValueFormatter
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
+import java.io.IOException
 
 class DataDetailActivity : AppCompatActivity() {
 
-    private lateinit var chart: LineChart
-    private lateinit var sensorDataList: List<SensorData>
-    private val dateFormat = SimpleDateFormat("ss.SSS", Locale.getDefault())
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var lineChart: LineChart
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_data_detail)
 
-        // Grafik ve RecyclerView tanımlamaları
-        chart = findViewById(R.id.Graph)
+        recyclerView = findViewById(R.id.recyclerView)
+        lineChart = findViewById(R.id.lineChart)
 
-        val fileName = intent.getStringExtra("FILE_NAME") ?: run {
-            showError("Dosya bulunamadı!")
-            finish()
-            return
+        // Dosya adını Intent'ten al
+        val fileName = intent.getStringExtra("FILE_NAME") ?: ""
+
+        // Dosyadan verileri oku
+        val sensorDataList = readSensorDataFromFile(fileName)
+
+        // Listeyi güncelle
+        val adapter = SensorDataAdapter(sensorDataList)
+        recyclerView.adapter = adapter
+        recyclerView.layoutManager = LinearLayoutManager(this)
+
+        // Grafiği güncelle
+        if (sensorDataList.isNotEmpty()) {
+            setupChart(sensorDataList)
+        }
+    }
+
+    private fun setupChart(sensorDataList: List<SensorData>) {
+        val entriesX = ArrayList<Entry>()
+        val entriesY = ArrayList<Entry>()
+        val entriesZ = ArrayList<Entry>()
+
+        sensorDataList.forEach { sensorData ->
+            entriesX.add(Entry(sensorData.timestamp.toFloat(), sensorData.x))
+            entriesY.add(Entry(sensorData.timestamp.toFloat(), sensorData.y))
+            entriesZ.add(Entry(sensorData.timestamp.toFloat(), sensorData.z))
         }
 
-        sensorDataList = readSensorDataFromFile(fileName)
-        if (sensorDataList.isEmpty()) {
-            showError("Geçersiz veri!")
-            finish()
-            return
-        }
+        val dataSetX = LineDataSet(entriesX, "X")
+        dataSetX.color = Color.RED
+        dataSetX.setDrawCircles(false)
+        dataSetX.lineWidth = 2f
 
-        setupChart()
+        val dataSetY = LineDataSet(entriesY, "Y")
+        dataSetY.color = Color.BLUE
+        dataSetY.setDrawCircles(false)
+        dataSetY.lineWidth = 2f
+
+        val dataSetZ = LineDataSet(entriesZ, "Z")
+        dataSetZ.color = Color.YELLOW
+        dataSetZ.setDrawCircles(false)
+        dataSetZ.lineWidth = 2f
+
+        val lineData = LineData(dataSetX, dataSetY, dataSetZ)
+        lineChart.data = lineData
+
+        // X eksenini yapılandır
+        val xAxis = lineChart.xAxis
+        xAxis.position = XAxis.XAxisPosition.BOTTOM
+        xAxis.setDrawGridLines(false)
+        xAxis.labelRotationAngle = 45f
+
+        // Grafiğe CustomMarker ekle
+        val marker = CustomMarker(this, sensorDataList)
+        lineChart.marker = marker
+
+        // Grafiği güncelle
+        lineChart.invalidate()
     }
 
     private fun readSensorDataFromFile(fileName: String): List<SensorData> {
-        return File(getExternalFilesDir(null), fileName).readLines().mapNotNull { line ->
-            line.split(",").takeIf { it.size == 4 }?.let {
-                try {
-                    SensorData(
-                        it[0].toLong(),
-                        it[1].toFloat(),
-                        it[2].toFloat(),
-                        it[3].toFloat()
-                    )
-                } catch (e: NumberFormatException) {
-                    null
+        val sensorDataList = mutableListOf<SensorData>()
+        val file = File(getExternalFilesDir(null), fileName)
+
+        try {
+            file.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val parts = line.split(",")
+                    if (parts.size == 4) {
+                        try {
+                            val timestamp = parts[0].toLong()
+                            val x = parts[1].toFloat()
+                            val y = parts[2].toFloat()
+                            val z = parts[3].toFloat()
+                            sensorDataList.add(SensorData(timestamp, x, y, z))
+                        } catch (e: NumberFormatException) {
+                            Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
+                        }
+                    }
                 }
             }
-        }
-    }
-
-    private fun setupChart() {
-        val entries = sensorDataList.map { data ->
-            Entry(
-                (data.timestamp - sensorDataList.first().timestamp).toFloat() / 1000f,
-                data.x
-            )
+        } catch (e: IOException) {
+            Log.e("DataDetailActivity", "Dosya okuma hatası: $fileName", e)
         }
 
-        val dataSet = LineDataSet(entries, "İvme Değerleri").apply {
-            color = Color.RED
-            lineWidth = 2f
-            setDrawCircles(true)
-            circleRadius = 4f
-        }
-
-        with(chart) {
-            this.data = LineData(dataSet)
-            description.isEnabled = false
-            xAxis.apply {
-                position = XAxis.XAxisPosition.BOTTOM
-                granularity = 1f
-                valueFormatter = object : ValueFormatter() {
-                    override fun getFormattedValue(value: Float) = "${value.toInt()}s"
-                }
-            }
-            animateX(1000)
-            invalidate()
-        }
-    }
-
-    private fun showError(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        Log.e("DataDetail", message)
+        return sensorDataList
     }
 }
