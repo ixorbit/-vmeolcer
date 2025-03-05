@@ -53,9 +53,9 @@ class CustomMarker(context: Context, private val sensorDataList: List<SensorData
             // İşaretçide gösterilecek metni oluştur
             val markerText = """
                 Zaman: $formattedTimestamp
-                X: ${"%.2f".format(sensorData?.x ?: 0f)} m/s²
-                Y: ${"%.2f".format(sensorData?.y ?: 0f)} m/s²
-                Z: ${"%.2f".format(sensorData?.z ?: 0f)} m/s²
+                X: ${"%.2f".format(sensorData?.x ?: 1f)} m/s²
+                Y: ${"%.2f".format(sensorData?.y ?: 1f)} m/s²
+                Z: ${"%.2f".format(sensorData?.z ?: 1f)} m/s²
             """.trimIndent()
 
             val spannableString = SpannableString(markerText)
