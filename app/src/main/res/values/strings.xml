@@ -3,4 +3,5 @@
     <string name="marker_info">Zaman: %1$s\nDeğer: %2$s m/s²</string>
     <string name="file_error">Dosya hatası!</string>
     <string name="acceleration">İvme Değerleri</string>
+
 </resources>

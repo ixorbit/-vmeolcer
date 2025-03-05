@@ -18,6 +18,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_Z = "z"
     }
 
+
     override fun onCreate(db: SQLiteDatabase) {
         val createTableSQL = ("CREATE TABLE $TABLE_NAME "
                 + "($COLUMN_TIMESTAMP INTEGER, "

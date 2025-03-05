@@ -10,6 +10,7 @@ class DataListActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_data_list)
 
+
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
         val filesDir = getExternalFilesDir(null)
 

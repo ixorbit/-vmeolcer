@@ -27,9 +27,7 @@ class DataDetailActivity : AppCompatActivity() {
         lineChart = findViewById(R.id.lineChart)
 
         // Dosya adını Intent'ten al
-        val fileName = intent.getStringExtra("FILE_NAME") ?: ""
-
-        // Dosyadan verileri oku
+        val fileName = intent.getStringExtra("FILE_NAME") ?: ""// Dosyadan verileri oku
         val sensorDataList = readSensorDataFromFile(fileName)
 
         // Listeyi güncelle
@@ -44,32 +42,21 @@ class DataDetailActivity : AppCompatActivity() {
     }
 
     private fun setupChart(sensorDataList: List<SensorData>) {
-        val entriesX = ArrayList<Entry>()
-        val entriesY = ArrayList<Entry>()
         val entriesZ = ArrayList<Entry>()
 
         sensorDataList.forEach { sensorData ->
-            entriesX.add(Entry(sensorData.timestamp.toFloat(), sensorData.x))
-            entriesY.add(Entry(sensorData.timestamp.toFloat(), sensorData.y))
             entriesZ.add(Entry(sensorData.timestamp.toFloat(), sensorData.z))
         }
-
-        val dataSetX = LineDataSet(entriesX, "X")
-        dataSetX.color = Color.RED
-        dataSetX.setDrawCircles(false)
-        dataSetX.lineWidth = 2f
-
-        val dataSetY = LineDataSet(entriesY, "Y")
-        dataSetY.color = Color.BLUE
-        dataSetY.setDrawCircles(false)
-        dataSetY.lineWidth = 2f
+        Log.d("DataDetailActivity", "entriesZ: $entriesZ")
 
         val dataSetZ = LineDataSet(entriesZ, "Z")
         dataSetZ.color = Color.YELLOW
         dataSetZ.setDrawCircles(false)
         dataSetZ.lineWidth = 2f
 
-        val lineData = LineData(dataSetX, dataSetY, dataSetZ)
+        val lineData = LineData()
+        lineData.addDataSet(dataSetZ)
+
         lineChart.data = lineData
 
         // X eksenini yapılandır
@@ -77,10 +64,28 @@ class DataDetailActivity : AppCompatActivity() {
         xAxis.position = XAxis.XAxisPosition.BOTTOM
         xAxis.setDrawGridLines(false)
         xAxis.labelRotationAngle = 45f
+        xAxis.isEnabled = true // X eksenini görünür yap
+        xAxis.axisMinimum = 0f // X ekseninin 0 dan başlamasını sağla
+        if (sensorDataList.isNotEmpty()) {
+            xAxis.axisMinimum = sensorDataList.first().timestamp.toFloat()
+        }
+
+        // Y eksenini yapılandır
+        val yAxisLeft = lineChart.axisLeft
+        yAxisLeft.isEnabled = true // Sol Y eksenini görünür yap
+
+        val yAxisRight = lineChart.axisRight
+        yAxisRight.isEnabled = false // Sağ Y eksenini görünmez yap
 
         // Grafiğe CustomMarker ekle
         val marker = CustomMarker(this, sensorDataList)
         lineChart.marker = marker
+
+        // Grafik ayarları
+        lineChart.setAutoScaleMinMaxEnabled(true)
+        lineChart.setDragEnabled(true)
+        lineChart.setScaleEnabled(true)
+        lineChart.setTouchEnabled(true)
 
         // Grafiği güncelle
         lineChart.invalidate()
@@ -93,6 +98,7 @@ class DataDetailActivity : AppCompatActivity() {
         try {
             file.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
+                    Log.d("DataDetailActivity", "Okunan Satır: $line") // Okunan her satırı yazdır
                     val parts = line.split(",")
                     if (parts.size == 4) {
                         try {
@@ -100,6 +106,7 @@ class DataDetailActivity : AppCompatActivity() {
                             val x = parts[1].toFloat()
                             val y = parts[2].toFloat()
                             val z = parts[3].toFloat()
+                            Log.d("DataDetailActivity", "Ayrıştırılan Değerler: timestamp=$timestamp, x=$x, y=$y, z=$z") // Ayrıştırılan değerleri yazdır
                             sensorDataList.add(SensorData(timestamp, x, y, z))
                         } catch (e: NumberFormatException) {
                             Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
@@ -110,7 +117,6 @@ class DataDetailActivity : AppCompatActivity() {
         } catch (e: IOException) {
             Log.e("DataDetailActivity", "Dosya okuma hatası: $fileName", e)
         }
-
-        return sensorDataList
+        Log.d("DataDetailActivity", "sensorDataList: $sensorDataList") // sensorDataList'in içeriğini yazdır
+        return sensorDataList }
     }
-}

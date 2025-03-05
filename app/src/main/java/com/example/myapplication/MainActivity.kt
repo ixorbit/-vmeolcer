@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         layoutParams.height = graphHeight
         graph.layoutParams = layoutParams
 
+
         seriesX.setColor(Color.RED)
         seriesY.setColor(Color.BLUE)
         seriesZ.setColor(Color.YELLOW)

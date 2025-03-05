@@ -14,6 +14,7 @@ class FileListAdapter(private val fileList: List<String>, private val context: C
         val fileNameTextView: TextView = itemView.findViewById(R.id.fileNameTextView) // Dosya adını gösteren TextView
     }
 
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_file, parent, false) // item_file.xml layout dosyasını kullan
         return ViewHolder(view)

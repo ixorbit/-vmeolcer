@@ -18,6 +18,7 @@ import java.util.*
 
 class CustomMarker(context: Context, private val sensorDataList: List<SensorData>) : MarkerView(context, R.layout.marker_view) {
 
+
     private val tvContent: TextView = findViewById(R.id.tvContent)
     private val dateFormat = SimpleDateFormat("mm:ss.SSS", Locale.getDefault())
     private var mOffset: MPPointF? = null
