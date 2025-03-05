@@ -27,7 +27,9 @@ class DataDetailActivity : AppCompatActivity() {
         lineChart = findViewById(R.id.lineChart)
 
         // Dosya adını Intent'ten al
-        val fileName = intent.getStringExtra("FILE_NAME") ?: ""// Dosyadan verileri oku
+        val fileName = intent.getStringExtra("FILE_NAME") ?: ""
+
+        // Dosyadan verileri oku
         val sensorDataList = readSensorDataFromFile(fileName)
 
         // Listeyi güncelle
@@ -98,7 +100,6 @@ class DataDetailActivity : AppCompatActivity() {
         try {
             file.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
-                    Log.d("DataDetailActivity", "Okunan Satır: $line") // Okunan her satırı yazdır
                     val parts = line.split(",")
                     if (parts.size == 4) {
                         try {
@@ -106,7 +107,6 @@ class DataDetailActivity : AppCompatActivity() {
                             val x = parts[1].toFloat()
                             val y = parts[2].toFloat()
                             val z = parts[3].toFloat()
-                            Log.d("DataDetailActivity", "Ayrıştırılan Değerler: timestamp=$timestamp, x=$x, y=$y, z=$z") // Ayrıştırılan değerleri yazdır
                             sensorDataList.add(SensorData(timestamp, x, y, z))
                         } catch (e: NumberFormatException) {
                             Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
@@ -117,6 +117,17 @@ class DataDetailActivity : AppCompatActivity() {
         } catch (e: IOException) {
             Log.e("DataDetailActivity", "Dosya okuma hatası: $fileName", e)
         }
-        Log.d("DataDetailActivity", "sensorDataList: $sensorDataList") // sensorDataList'in içeriğini yazdır
-        return sensorDataList }
+        if (sensorDataList.isNotEmpty()) {
+            Log.d("DataDetailActivity", "Min Timestamp: ${sensorDataList.minOf { it.timestamp }}")
+            Log.d("DataDetailActivity", "Max Timestamp: ${sensorDataList.maxOf { it.timestamp }}")
+            Log.d("DataDetailActivity", "Min X: ${sensorDataList.minOf { it.x }}")
+            Log.d("DataDetailActivity", "Max X: ${sensorDataList.maxOf { it.x }}")
+            Log.d("DataDetailActivity", "Min Y: ${sensorDataList.minOf { it.y }}")
+            Log.d("DataDetailActivity", "Max Y: ${sensorDataList.maxOf { it.y }}")
+            Log.d("DataDetailActivity", "Min Z: ${sensorDataList.minOf { it.z }}")
+            Log.d("DataDetailActivity", "Max Z: ${sensorDataList.maxOf { it.z }}")
+        }
+
+        return sensorDataList
     }
+}

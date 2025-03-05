@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastZValue = 0.0
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
+    private var fileName: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +47,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
 
         val screenWidth = resources.displayMetrics.widthPixels
         val graphWidth = screenWidth / 1
@@ -57,10 +57,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         layoutParams.height = graphHeight
         graph.layoutParams = layoutParams
 
-
-        seriesX.setColor(Color.RED)
-        seriesY.setColor(Color.BLUE)
-        seriesZ.setColor(Color.YELLOW)
+        seriesX.color = Color.RED
+        seriesY.color = Color.BLUE
+        seriesZ.color = Color.YELLOW
 
         graph.viewport.isScalable = true
         graph.viewport.isScrollable = true
@@ -76,22 +75,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         dbHelper = DatabaseHelper(this)
 
-
         startButton.setOnClickListener {
             if (!isRunning) {
                 isRunning = true
                 dbHelper.clearAllData()
+                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
             }
         }
 
-        stopButton.setOnClickListener{
+        stopButton.setOnClickListener {
             if (isRunning) {
                 isRunning = false
+                sensorManager.unregisterListener(this)
                 val timestamp = System.currentTimeMillis()
-                val fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date(timestamp)) + ".txt"
+                fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date(timestamp)) + ".txt"
                 val file = File(getExternalFilesDir(null), fileName)
                 try {
-                    if (!file.exists()){
+                    if (!file.exists()) {
                         file.createNewFile() // Dosya yoksa oluştur
                     }
                 } catch (e: IOException) {
@@ -110,10 +110,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         showDataButton.setOnClickListener {
             val intent = Intent(this, DataListActivity::class.java) // DataListActivity'yi aç
+            intent.putExtra("FILE_NAME", fileName)
             startActivity(intent)
         }
-
-
     }
 
     private fun updateGraph(x: Float, y: Float, z: Float) {
@@ -128,8 +127,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         graph.viewport.isXAxisBoundsManual = true
         graph.viewport.setMinX(minX)
         graph.viewport.setMaxX(maxX)
-
-        dbHelper.addSensorData(System.currentTimeMillis(), x, y, z)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -149,7 +146,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
-        if (isRunning) {
+        if(isRunning) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         }
     }
