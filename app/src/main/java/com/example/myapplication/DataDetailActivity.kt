@@ -64,14 +64,14 @@ class DataDetailActivity : AppCompatActivity() {
 
     private fun setupChart(sensorDataList: List<SensorData>) {
         try {
-            // Veri kontrolü
+            // Data validation
             if (sensorDataList.size < 2) {
                 lineChart.setNoDataText("Yetersiz veri (en az 2 veri noktası gerekiyor)")
                 lineChart.setNoDataTextColor(COLOR_TEXT)
                 return
             }
 
-            // Grafik arkaplanını ve genel görünümü ayarla
+            // Set chart background and general appearance
             lineChart.setBackgroundColor(COLOR_BACKGROUND)
             lineChart.description.isEnabled = false
             lineChart.setDrawGridBackground(false)
@@ -79,61 +79,71 @@ class DataDetailActivity : AppCompatActivity() {
             lineChart.setBorderColor(COLOR_AXIS_LINE)
             lineChart.setBorderWidth(2f)
 
-            // Kenar boşluklarını ayarla
+            // Set margins
             lineChart.setExtraOffsets(16f, 16f, 16f, 16f)
 
-            // Dokunmatik özellikleri ve ölçeklendirmeyi ayarla
+            // Configure touch features and scaling
             lineChart.setTouchEnabled(true)
             lineChart.isDragEnabled = true
             lineChart.setScaleEnabled(true)
             lineChart.setPinchZoom(true)
 
-            // X, Y ve Z eksenleri için Entry listeleri oluştur
+            // Create Entry lists for X, Y, and Z axes
             val entriesX = ArrayList<Entry>()
             val entriesY = ArrayList<Entry>()
             val entriesZ = ArrayList<Entry>()
 
-            // İlk zaman damgasını referans olarak al
+            // Use first timestamp as reference
             val firstTimestamp = sensorDataList.firstOrNull()?.timestamp ?: 0L
 
-            sensorDataList.forEach { sensorData ->
-                // Zaman damgalarını saniyeye çevir
-                val timeInSeconds = (sensorData.timestamp - firstTimestamp) / 1000f
+            // Safely add data points
+            for (sensorData in sensorDataList) {
+                try {
+                    // Convert timestamps to seconds
+                    val timeInSeconds = (sensorData.timestamp - firstTimestamp) / 1000f
 
-                // Sadece geçerli değerler ekle (NaN ve Infinite değerleri filtrele)
-                if (!timeInSeconds.isNaN() && !timeInSeconds.isInfinite() &&
-                    !sensorData.x.isNaN() && !sensorData.x.isInfinite() &&
-                    !sensorData.y.isNaN() && !sensorData.y.isInfinite() &&
-                    !sensorData.z.isNaN() && !sensorData.z.isInfinite()) {
-                    entriesX.add(Entry(timeInSeconds, sensorData.x))
-                    entriesY.add(Entry(timeInSeconds, sensorData.y))
-                    entriesZ.add(Entry(timeInSeconds, sensorData.z))
+                    // Only add valid values (filter NaN and Infinite values)
+                    if (timeInSeconds.isFinite() &&
+                        sensorData.x.isFinite() &&
+                        sensorData.y.isFinite() &&
+                        sensorData.z.isFinite()) {
+                        entriesX.add(Entry(timeInSeconds, sensorData.x))
+                        entriesY.add(Entry(timeInSeconds, sensorData.y))
+                        entriesZ.add(Entry(timeInSeconds, sensorData.z))
+                    }
+                } catch (e: Exception) {
+                    Log.e("DataDetailActivity", "Error adding data point", e)
                 }
             }
 
-            // Veri kontrolü - boş veri setleri için erken çıkış
+            // Data validation - early exit for empty data sets
             if (entriesX.size < 2 || entriesY.size < 2 || entriesZ.size < 2) {
                 lineChart.setNoDataText("Yetersiz geçerli veri noktası")
                 lineChart.setNoDataTextColor(COLOR_TEXT)
                 return
             }
 
-            // X ekseni için veri seti oluştur ve görünümünü ayarla
+            // Sort entries by X value to ensure proper line drawing
+            entriesX.sortBy { it.x }
+            entriesY.sortBy { it.x }
+            entriesZ.sortBy { it.x }
+
+            // Create data set for X axis and configure appearance
             val dataSetX = LineDataSet(entriesX, "X Ekseni").apply {
                 color = COLOR_X
                 lineWidth = 2.5f
                 setDrawCircles(false)
-                mode = LineDataSet.Mode.CUBIC_BEZIER  // Pürüzsüz eğri
+                mode = LineDataSet.Mode.CUBIC_BEZIER  // Smooth curve
                 cubicIntensity = 0.2f
                 setDrawFilled(true)
-                fillAlpha = 40  // Yarı saydam dolgu
+                fillAlpha = 40  // Semi-transparent fill
                 fillColor = COLOR_X
                 setDrawValues(false)
                 highLightColor = Color.WHITE
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // Y ekseni için veri seti oluştur ve görünümünü ayarla
+            // Create data set for Y axis and configure appearance
             val dataSetY = LineDataSet(entriesY, "Y Ekseni").apply {
                 color = COLOR_Y
                 lineWidth = 2.5f
@@ -148,7 +158,7 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // Z ekseni için veri seti oluştur ve görünümünü ayarla
+            // Create data set for Z axis and configure appearance
             val dataSetZ = LineDataSet(entriesZ, "Z Ekseni").apply {
                 color = COLOR_Z
                 lineWidth = 2.5f
@@ -163,21 +173,25 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // LineData oluştur ve veri setlerini ekle
+            // Create LineData and add data sets
             val lineData = LineData(dataSetX, dataSetY, dataSetZ)
             lineChart.data = lineData
 
-            // Zaman etiketleri için formatlayıcı
+            // Formatter for time labels
             val timeFormatter = object : ValueFormatter() {
                 private val dateFormat = SimpleDateFormat("mm:ss", Locale.getDefault())
 
                 override fun getFormattedValue(value: Float): String {
-                    val timestamp = firstTimestamp + (value * 1000).toLong()
-                    return dateFormat.format(Date(timestamp))
+                    try {
+                        val timestamp = firstTimestamp + (value * 1000).toLong()
+                        return dateFormat.format(Date(timestamp))
+                    } catch (e: Exception) {
+                        return value.toString()
+                    }
                 }
             }
 
-            // X eksenini yapılandır
+            // Configure X axis
             lineChart.xAxis.apply {
                 position = XAxis.XAxisPosition.BOTTOM
                 textColor = COLOR_TEXT
@@ -191,7 +205,7 @@ class DataDetailActivity : AppCompatActivity() {
                 gridLineWidth = 0.7f
             }
 
-            // Sol Y eksenini yapılandır
+            // Configure left Y axis
             lineChart.axisLeft.apply {
                 textColor = COLOR_TEXT
                 axisLineColor = COLOR_AXIS_LINE
@@ -201,22 +215,36 @@ class DataDetailActivity : AppCompatActivity() {
                 axisLineWidth = 2f
                 gridLineWidth = 0.7f
 
-                // Y ekseni sınırlarını ayarla
-                val buffer = 1.0f  // Biraz ekstra boşluk
-                val minY = sensorDataList.minOf { minOf(it.x, it.y, it.z) } - buffer
-                val maxY = sensorDataList.maxOf { maxOf(it.x, it.y, it.z) } + buffer
-                axisMinimum = minY
-                axisMaximum = maxY
+                // Set Y axis limits with a buffer
+                val buffer = 1.0f  // Add extra space
+                val minValues = sensorDataList.mapNotNull {
+                    minOf(it.x, it.y, it.z).takeIf { it.isFinite() }
+                }
+                val maxValues = sensorDataList.mapNotNull {
+                    maxOf(it.x, it.y, it.z).takeIf { it.isFinite() }
+                }
+
+                // Only set axis limits if we have valid min/max values
+                if (minValues.isNotEmpty() && maxValues.isNotEmpty()) {
+                    val minY = minValues.minOrNull()!! - buffer
+                    val maxY = maxValues.maxOrNull()!! + buffer
+                    axisMinimum = minY
+                    axisMaximum = maxY
+                } else {
+                    // Default limits if we can't calculate from data
+                    axisMinimum = -12f
+                    axisMaximum = 12f
+                }
             }
 
-            // Sağ Y eksenini devre dışı bırak
+            // Disable right Y axis
             lineChart.axisRight.isEnabled = false
 
-            // Grafiğe özel işaretçi ekle
+            // Add custom marker to chart
             val marker = CustomMarker(this, sensorDataList)
             lineChart.marker = marker
 
-            // Grafik açıklaması (legend) ayarları
+            // Configure chart legend
             lineChart.legend.apply {
                 isEnabled = true
                 form = Legend.LegendForm.LINE
@@ -231,14 +259,14 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawInside(true)
             }
 
-            // Animasyon ekle
+            // Add animation
             lineChart.animateX(1500)
 
-            // Grafiği yenile
+            // Refresh chart
             lineChart.invalidate()
         } catch (e: Exception) {
-            // Herhangi bir hata durumunda güvenli çıkış
-            Log.e("DataDetailActivity", "Grafik oluşturma hatası", e)
+            // Safe exit in case of any error
+            Log.e("DataDetailActivity", "Chart creation error", e)
             lineChart.setNoDataText("Grafik oluşturulurken hata oluştu: ${e.message}")
             lineChart.setNoDataTextColor(COLOR_TEXT)
         }
