@@ -1,6 +1,5 @@
 package com.example.myapplication
 
-
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -17,7 +16,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_Y = "y"
         const val COLUMN_Z = "z"
     }
-
 
     override fun onCreate(db: SQLiteDatabase) {
         val createTableSQL = ("CREATE TABLE $TABLE_NAME "
@@ -37,14 +35,23 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val sensorDataList = mutableListOf<SensorData>()
         val db = this.readableDatabase
         val cursor = db.rawQuery("SELECT * FROM $TABLE_NAME", null)
-        while (cursor.moveToNext()) {
-            val timestamp = cursor.getLong(cursor.getColumnIndex(COLUMN_TIMESTAMP))
-            val x = cursor.getFloat(cursor.getColumnIndex(COLUMN_X))
-            val y = cursor.getFloat(cursor.getColumnIndex(COLUMN_Y))
-            val z = cursor.getFloat(cursor.getColumnIndex(COLUMN_Z))
-            val sensorData = SensorData(timestamp, x, y, z)
-            sensorDataList.add(sensorData)
+
+        if (cursor.moveToFirst()) {
+            val timestampIndex = cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP)
+            val xIndex = cursor.getColumnIndexOrThrow(COLUMN_X)
+            val yIndex = cursor.getColumnIndexOrThrow(COLUMN_Y)
+            val zIndex = cursor.getColumnIndexOrThrow(COLUMN_Z)
+
+            do {
+                val timestamp = cursor.getLong(timestampIndex)
+                val x = cursor.getFloat(xIndex)
+                val y = cursor.getFloat(yIndex)
+                val z = cursor.getFloat(zIndex)
+                val sensorData = SensorData(timestamp, x, y, z)
+                sensorDataList.add(sensorData)
+            } while (cursor.moveToNext())
         }
+
         cursor.close()
         return sensorDataList
     }
