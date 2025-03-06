@@ -7,8 +7,8 @@
     android:background="#121212"
     tools:context=".MainActivity">
 
-    <com.github.mikephil.charting.charts.LineChart
-        android:id="@+id/lineChart"
+    <com.jjoe64.graphview.GraphView
+        android:id="@+id/graph"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
