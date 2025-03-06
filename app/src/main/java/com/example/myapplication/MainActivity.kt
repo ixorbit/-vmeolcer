@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.content.Intent
+import android.widget.Toast
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.hardware.Sensor
@@ -218,27 +219,42 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun startRecording() {
-        // Grafik verilerini temizle
-        entriesX.clear()
-        entriesY.clear()
-        entriesZ.clear()
+        try {
+            // Grafik verilerini temizle
+            entriesX.clear()
+            entriesY.clear()
+            entriesZ.clear()
 
-        // Veritabanını temizle ve kayıt başlat
-        dbHelper.clearAllData()
+            // Veritabanını temizle ve kayıt başlat
+            dbHelper.clearAllData()
 
-        // Başlangıç zamanını kaydet
-        startTime = System.currentTimeMillis()
+            // Başlangıç zamanını kaydet
+            startTime = System.currentTimeMillis()
 
-        // Kayıt durumunu güncelle
-        isRunning = true
+            // Kayıt durumunu güncelle
+            isRunning = true
 
-        // Sensör dinlemeyi başlat
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+            // Sensör dinlemeyi başlat
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
 
-        // Verileri güncelle
-        lineChart.data.notifyDataChanged()
-        lineChart.notifyDataSetChanged()
-        lineChart.invalidate()
+            // Veri setlerini oluştur veya yeniden yapılandır
+            if (lineChart.data == null) {
+                setupChart() // Grafik daha önce yapılandırılmamışsa yeniden yapılandır
+            } else {
+                // Veri setlerini güncelle
+                val lineData = LineData(dataSetX, dataSetY, dataSetZ)
+                lineChart.data = lineData
+            }
+
+            // Verileri güncelle
+            lineChart.data.notifyDataChanged()
+            lineChart.notifyDataSetChanged()
+            lineChart.invalidate()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Kayıt başlatma hatası", e)
+            Toast.makeText(this, "Kayıt başlatılamadı: ${e.message}", Toast.LENGTH_SHORT).show()
+            isRunning = false
+        }
     }
 
     private fun stopRecording() {
