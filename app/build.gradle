@@ -35,6 +35,9 @@ android {
 
 dependencies {
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
+    implementation "androidx.recyclerview:recyclerview:1.2.1"
+    implementation "androidx.cardview:cardview:1.0.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-parcelize-runtime:1.5.0"
     implementation 'androidx.sqlite:sqlite:2.2.0'
     implementation 'androidx.sqlite:sqlite-framework:2.2.0'
     implementation 'com.jjoe64:graphview:4.2.2'

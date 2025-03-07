@@ -1,7 +1,13 @@
 <resources>
-    <string name="app_name">My Application</string>
-    <string name="marker_info">Zaman: %1$s\nDeğer: %2$s m/s²</string>
-    <string name="file_error">Dosya hatası!</string>
-    <string name="acceleration">İvme Değerleri</string>
-
+    <!-- Add these to your strings.xml file -->
+    <string name="no_data_available">No sensor data available</string>
+    <string name="no_files_available">No files available</string>
+    <string name="view_details">View details</string>
+    <string name="sensor_data">Sensor Data</string>
+    <string name="recorded_at">Recorded at: %1$s</string>
+    <string name="sensor_type">Sensor Type: %1$s</string>
+    <string name="file_name">File name: %1$s</string>
+    <string name="file_size">Size: %1$s</string>
+    <string name="empty_folder">This folder is empty</string>
+    <string name="warning_no_data">No data available</string>
 </resources>
