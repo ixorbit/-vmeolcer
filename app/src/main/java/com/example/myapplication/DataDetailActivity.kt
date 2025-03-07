@@ -3,8 +3,12 @@ package com.example.myapplication
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.github.mikephil.charting.charts.LineChart
@@ -23,8 +27,11 @@ class DataDetailActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var lineChart: LineChart
+    private lateinit var chartCardView: CardView
+    private lateinit var noDataView: View
+    private lateinit var dataFileName: String
 
-    // Canlı renkler tanımla
+    // Modern renk şeması
     private val COLOR_X = Color.rgb(255, 89, 94)  // Parlak kırmızı
     private val COLOR_Y = Color.rgb(138, 255, 138)  // Parlak yeşil
     private val COLOR_Z = Color.rgb(119, 210, 255)  // Parlak mavi
@@ -32,46 +39,94 @@ class DataDetailActivity : AppCompatActivity() {
     private val COLOR_GRID = Color.rgb(50, 50, 50)  // Izgara çizgileri
     private val COLOR_TEXT = Color.rgb(200, 200, 200)  // Metin rengi
     private val COLOR_AXIS_LINE = Color.rgb(100, 100, 100)  // Eksen çizgisi
+    private val COLOR_CARD_BACKGROUND = Color.rgb(30, 30, 30)  // Kart arkaplan rengi
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_data_detail)
 
+        // UI elemanlarını bağla
         recyclerView = findViewById(R.id.recyclerView)
         lineChart = findViewById(R.id.lineChart)
+        chartCardView = findViewById(R.id.chartCardView)
+        noDataView = findViewById(R.id.noDataView)
+
+        // Toolbar ayarla
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setDisplayShowHomeEnabled(true)
+            elevation = 8f
+        }
 
         // Dosya adını Intent'ten al
-        val fileName = intent.getStringExtra("FILE_NAME") ?: ""
+        dataFileName = intent.getStringExtra("FILE_NAME") ?: ""
+        supportActionBar?.title = dataFileName
+
+        // CardView'ı modern görünüm için ayarla
+        chartCardView.apply {
+            radius = 16f
+            cardElevation = 8f
+            setCardBackgroundColor(COLOR_CARD_BACKGROUND)
+        }
+
+        // Başlangıçta animasyon ekle
+        chartCardView.alpha = 0f
+        chartCardView.visibility = View.VISIBLE
+        chartCardView.animate().alpha(1f).setDuration(500).setInterpolator(AccelerateDecelerateInterpolator()).start()
 
         // Dosyadan verileri oku
-        val sensorDataList = readSensorDataFromFile(fileName)
+        val sensorDataList = readSensorDataFromFile(dataFileName)
 
-        // Listeyi güncelle
+        // Eğer veriler başarıyla okunduysa
+        if (sensorDataList.isNotEmpty()) {
+            // Recyclerview'ı ayarla ve verileri göster
+            setupRecyclerView(sensorDataList)
+
+            // Grafiği ayarla
+            if (sensorDataList.size >= 2) {
+                setupChart(sensorDataList)
+                noDataView.visibility = View.GONE
+            } else {
+                showNoDataUI("Grafik için en az 2 veri noktası gerekiyor")
+            }
+        } else {
+            showNoDataUI("Dosya okunamadı veya boş dosya")
+        }
+    }
+
+    private fun setupRecyclerView(sensorDataList: List<SensorData>) {
         val adapter = SensorDataAdapter(sensorDataList)
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
 
-        // Grafiği güncelle
-        if (sensorDataList.size >= 2) {  // En az 2 veri noktası olmalı
-            setupChart(sensorDataList)
-        } else {
-            // Yetersiz veri durumunda kullanıcıya bilgi ver
-            lineChart.setNoDataText("Yetersiz veri (en az 2 veri noktası gerekiyor)")
-            lineChart.setNoDataTextColor(COLOR_TEXT)
-            Toast.makeText(this, "Grafik çizimi için yetersiz veri", Toast.LENGTH_SHORT).show()
-        }
+        // Animasyon ekle
+        recyclerView.alpha = 0f
+        recyclerView.animate().alpha(1f).setDuration(500).setStartDelay(300).start()
+    }
+
+    private fun showNoDataUI(message: String) {
+        // Grafik kartını gizle
+        chartCardView.visibility = View.GONE
+
+        // Veri yok mesajını göster
+        noDataView.visibility = View.VISIBLE
+        val noDataTextView = noDataView.findViewById<TextView>(R.id.noDataTextView)
+        noDataTextView.text = message
+
+        // Kullanıcıya bilgi ver
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun setupChart(sensorDataList: List<SensorData>) {
         try {
-            // Data validation
+            // Veri doğrulama
             if (sensorDataList.size < 2) {
                 lineChart.setNoDataText("Yetersiz veri (en az 2 veri noktası gerekiyor)")
                 lineChart.setNoDataTextColor(COLOR_TEXT)
                 return
             }
 
-            // Set chart background and general appearance
+            // Grafik arka planı ve genel görünümü ayarla
             lineChart.setBackgroundColor(COLOR_BACKGROUND)
             lineChart.description.isEnabled = false
             lineChart.setDrawGridBackground(false)
@@ -79,30 +134,30 @@ class DataDetailActivity : AppCompatActivity() {
             lineChart.setBorderColor(COLOR_AXIS_LINE)
             lineChart.setBorderWidth(2f)
 
-            // Set margins
+            // Grafik kenar boşluklarını ayarla
             lineChart.setExtraOffsets(16f, 16f, 16f, 16f)
 
-            // Configure touch features and scaling
+            // Dokunma özelliklerini ve ölçeklemeyi yapılandır
             lineChart.setTouchEnabled(true)
             lineChart.isDragEnabled = true
             lineChart.setScaleEnabled(true)
             lineChart.setPinchZoom(true)
 
-            // Create Entry lists for X, Y, and Z axes
+            // X, Y, Z eksenleri için Entry listelerini oluştur
             val entriesX = ArrayList<Entry>()
             val entriesY = ArrayList<Entry>()
             val entriesZ = ArrayList<Entry>()
 
-            // Use first timestamp as reference
+            // İlk zaman damgasını referans olarak kullan
             val firstTimestamp = sensorDataList.firstOrNull()?.timestamp ?: 0L
 
-            // Safely add data points
+            // Veri noktalarını güvenli bir şekilde ekle
             for (sensorData in sensorDataList) {
                 try {
-                    // Convert timestamps to seconds
+                    // Zaman damgalarını saniyelere dönüştür
                     val timeInSeconds = (sensorData.timestamp - firstTimestamp) / 1000f
 
-                    // Only add valid values (filter NaN and Infinite values)
+                    // Yalnızca geçerli değerleri ekle (NaN ve Sonsuz değerleri filtrele)
                     if (timeInSeconds.isFinite() &&
                         sensorData.x.isFinite() &&
                         sensorData.y.isFinite() &&
@@ -112,38 +167,38 @@ class DataDetailActivity : AppCompatActivity() {
                         entriesZ.add(Entry(timeInSeconds, sensorData.z))
                     }
                 } catch (e: Exception) {
-                    Log.e("DataDetailActivity", "Error adding data point", e)
+                    Log.e("DataDetailActivity", "Veri noktası ekleme hatası", e)
                 }
             }
 
-            // Data validation - early exit for empty data sets
+            // Veri doğrulama - veri kümeleri boşsa erken çık
             if (entriesX.size < 2 || entriesY.size < 2 || entriesZ.size < 2) {
                 lineChart.setNoDataText("Yetersiz geçerli veri noktası")
                 lineChart.setNoDataTextColor(COLOR_TEXT)
                 return
             }
 
-            // Sort entries by X value to ensure proper line drawing
+            // Düzgün çizim için girişleri X değerine göre sırala
             entriesX.sortBy { it.x }
             entriesY.sortBy { it.x }
             entriesZ.sortBy { it.x }
 
-            // Create data set for X axis and configure appearance
+            // X ekseni için veri kümesi oluştur ve görünümü yapılandır
             val dataSetX = LineDataSet(entriesX, "X Ekseni").apply {
                 color = COLOR_X
                 lineWidth = 2.5f
                 setDrawCircles(false)
-                mode = LineDataSet.Mode.CUBIC_BEZIER  // Smooth curve
+                mode = LineDataSet.Mode.CUBIC_BEZIER  // Düzgün eğri
                 cubicIntensity = 0.2f
                 setDrawFilled(true)
-                fillAlpha = 40  // Semi-transparent fill
+                fillAlpha = 40  // Yarı saydam dolgu
                 fillColor = COLOR_X
                 setDrawValues(false)
                 highLightColor = Color.WHITE
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // Create data set for Y axis and configure appearance
+            // Y ekseni için veri kümesi oluştur ve görünümü yapılandır
             val dataSetY = LineDataSet(entriesY, "Y Ekseni").apply {
                 color = COLOR_Y
                 lineWidth = 2.5f
@@ -158,7 +213,7 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // Create data set for Z axis and configure appearance
+            // Z ekseni için veri kümesi oluştur ve görünümü yapılandır
             val dataSetZ = LineDataSet(entriesZ, "Z Ekseni").apply {
                 color = COLOR_Z
                 lineWidth = 2.5f
@@ -173,11 +228,11 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawHorizontalHighlightIndicator(false)
             }
 
-            // Create LineData and add data sets
+            // LineData oluştur ve veri kümelerini ekle
             val lineData = LineData(dataSetX, dataSetY, dataSetZ)
             lineChart.data = lineData
 
-            // Formatter for time labels
+            // Zaman etiketleri için biçimlendirici
             val timeFormatter = object : ValueFormatter() {
                 private val dateFormat = SimpleDateFormat("mm:ss", Locale.getDefault())
 
@@ -191,7 +246,7 @@ class DataDetailActivity : AppCompatActivity() {
                 }
             }
 
-            // Configure X axis
+            // X eksenini yapılandır
             lineChart.xAxis.apply {
                 position = XAxis.XAxisPosition.BOTTOM
                 textColor = COLOR_TEXT
@@ -205,7 +260,7 @@ class DataDetailActivity : AppCompatActivity() {
                 gridLineWidth = 0.7f
             }
 
-            // Configure left Y axis
+            // Sol Y eksenini yapılandır
             lineChart.axisLeft.apply {
                 textColor = COLOR_TEXT
                 axisLineColor = COLOR_AXIS_LINE
@@ -215,8 +270,8 @@ class DataDetailActivity : AppCompatActivity() {
                 axisLineWidth = 2f
                 gridLineWidth = 0.7f
 
-                // Set Y axis limits with a buffer
-                val buffer = 1.0f  // Add extra space
+                // Y ekseni limitlerini bir tamponla ayarla
+                val buffer = 1.0f  // Ekstra alan ekle
                 val minValues = sensorDataList.mapNotNull {
                     minOf(it.x, it.y, it.z).takeIf { it.isFinite() }
                 }
@@ -224,27 +279,27 @@ class DataDetailActivity : AppCompatActivity() {
                     maxOf(it.x, it.y, it.z).takeIf { it.isFinite() }
                 }
 
-                // Only set axis limits if we have valid min/max values
+                // Yalnızca geçerli min/max değerlerimiz varsa eksen limitlerini ayarla
                 if (minValues.isNotEmpty() && maxValues.isNotEmpty()) {
                     val minY = minValues.minOrNull()!! - buffer
                     val maxY = maxValues.maxOrNull()!! + buffer
                     axisMinimum = minY
                     axisMaximum = maxY
                 } else {
-                    // Default limits if we can't calculate from data
+                    // Verilerden hesaplayamazsak varsayılan limitler
                     axisMinimum = -12f
                     axisMaximum = 12f
                 }
             }
 
-            // Disable right Y axis
+            // Sağ Y eksenini devre dışı bırak
             lineChart.axisRight.isEnabled = false
 
-            // Add custom marker to chart
+            // Grafik için özel işaretçi ekle
             val marker = CustomMarker(this, sensorDataList)
             lineChart.marker = marker
 
-            // Configure chart legend
+            // Grafik açıklamasını yapılandır
             lineChart.legend.apply {
                 isEnabled = true
                 form = Legend.LegendForm.LINE
@@ -259,14 +314,14 @@ class DataDetailActivity : AppCompatActivity() {
                 setDrawInside(true)
             }
 
-            // Add animation
+            // Animasyon ekle
             lineChart.animateX(1500)
 
-            // Refresh chart
+            // Grafiği yenile
             lineChart.invalidate()
         } catch (e: Exception) {
-            // Safe exit in case of any error
-            Log.e("DataDetailActivity", "Chart creation error", e)
+            // Herhangi bir hata durumunda güvenli çıkış
+            Log.e("DataDetailActivity", "Grafik oluşturma hatası", e)
             lineChart.setNoDataText("Grafik oluşturulurken hata oluştu: ${e.message}")
             lineChart.setNoDataTextColor(COLOR_TEXT)
         }
@@ -277,26 +332,47 @@ class DataDetailActivity : AppCompatActivity() {
         val file = File(getExternalFilesDir(null), fileName)
 
         try {
+            if (!file.exists() || !file.canRead()) {
+                Log.e("DataDetailActivity", "Dosya bulunamadı veya okunamıyor: $fileName")
+                Toast.makeText(this, "Dosya bulunamadı: $fileName", Toast.LENGTH_SHORT).show()
+                return emptyList()
+            }
+
             file.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
-                    val parts = line.split(",")
-                    if (parts.size == 4) {
-                        try {
-                            val timestamp = parts[0].toLong()
-                            val x = parts[1].toFloat()
-                            val y = parts[2].toFloat()
-                            val z = parts[3].toFloat()
-                            sensorDataList.add(SensorData(timestamp, x, y, z))
-                        } catch (e: NumberFormatException) {
-                            Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
+                    if (line.isNotBlank()) {
+                        val parts = line.split(",")
+                        if (parts.size == 4) {
+                            try {
+                                val timestamp = parts[0].toLong()
+                                val x = parts[1].toFloat()
+                                val y = parts[2].toFloat()
+                                val z = parts[3].toFloat()
+                                sensorDataList.add(SensorData(timestamp, x, y, z))
+                            } catch (e: NumberFormatException) {
+                                Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
+                            }
                         }
                     }
                 }
             }
         } catch (e: IOException) {
             Log.e("DataDetailActivity", "Dosya okuma hatası: $fileName", e)
+            Toast.makeText(this, "Dosya okuma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
         }
 
         return sensorDataList
+    }
+
+    // Geri düğmesi için destek
+    override fun onSupportNavigateUp(): Boolean {
+        onBackPressed()
+        return true
+    }
+
+    // Özel animasyonlu geri dönüş
+    override fun onBackPressed() {
+        super.onBackPressed()
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 }

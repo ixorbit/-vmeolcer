@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val COLOR_Y = Color.rgb(138, 255, 138)  // Vibrant green
     private val COLOR_Z = Color.rgb(119, 210, 255)  // Vibrant blue
     private val COLOR_GRID = Color.rgb(200, 200, 200)  // Light gray for grid
-    private val COLOR_BACKGROUND = Color.rgb(245, 245, 250)  // Very light blue-gray
+    private val COLOR_BACKGROUND = Color.BLACK  // Siyah arka plan
     private val COLOR_TEXT = Color.rgb(80, 80, 100)  // Dark blue-gray
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +128,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         styleGraph()
     }
 
+    // styleGraph fonksiyonunu güncelleyin - siyah arka plan için
     private fun styleGraph() {
         // Viewport settings
         graph.viewport.apply {
@@ -150,14 +151,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             gridColor = COLOR_GRID
             horizontalAxisTitle = "Time (samples)"
             verticalAxisTitle = "Acceleration (m/s²)"
-            val graph: GraphView = findViewById(R.id.graph)
-            val gridLabel: GridLabelRenderer = graph.gridLabelRenderer
-            gridLabel.textSize = 3f // Doğru kullanım: textSize            horizontalAxisTitleTextSize = 36f
+            horizontalAxisTitleTextSize = 36f
             verticalAxisTitleTextSize = 36f
             textSize = 30f
             padding = 20
-            verticalLabelsColor = COLOR_TEXT
-            horizontalLabelsColor = COLOR_TEXT
+            verticalLabelsColor = Color.WHITE  // Siyah zemin için beyaz yazı
+            horizontalLabelsColor = Color.WHITE  // Siyah zemin için beyaz yazı
             gridStyle = GridLabelRenderer.GridStyle.BOTH
             numHorizontalLabels = 5
             numVerticalLabels = 5
@@ -167,9 +166,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         // Legend renderer styling
         graph.legendRenderer.apply {
             isVisible = true
-            backgroundColor = Color.argb(150, 255, 255, 255)
+            backgroundColor = Color.argb(150, 40, 40, 40)  // Koyu, yarı saydam arkaplan
             textSize = 35f
-            textColor = COLOR_TEXT
+            textColor = Color.WHITE  // Beyaz yazı
             margin = 20
             width = 0 // Auto width
             align = LegendRenderer.LegendAlign.TOP
@@ -177,8 +176,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         // Secondary styling
         graph.apply {
-            setBackgroundColor(COLOR_BACKGROUND)
-            titleColor = COLOR_TEXT
+            setBackgroundColor(COLOR_BACKGROUND)  // Siyah arka plan
+            titleColor = Color.WHITE  // Beyaz başlık
             titleTextSize = 50f
             title = "Accelerometer Data"
         }
@@ -241,11 +240,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         // Update button states
         startButton.isEnabled = !isRecording
         stopButton.isEnabled = isRecording
-        showDataButton.isEnabled = !isRecording && fileName.isNotEmpty()
+
+        // Show data button is enabled if we have a filename (data has been saved)
+        showDataButton.isEnabled = fileName.isNotEmpty()
 
         // Visual feedback for active/inactive buttons
         startButton.alpha = if (isRecording) 0.5f else 1f
         stopButton.alpha = if (isRecording) 1f else 0.5f
+        showDataButton.alpha = if (fileName.isNotEmpty()) 1f else 0.5f
 
         // Show/hide info card with animation
         if (isRecording) {
@@ -272,6 +274,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         graph.viewport.setMaxX(20.0)
     }
 
+    // saveDataToFile fonksiyonunu güncelleyin, showDataButton'un aktif olduğunu göstermek için
     private fun saveDataToFile() {
         val timestamp = System.currentTimeMillis()
         fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date(timestamp)) + ".txt"
@@ -292,6 +295,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             // Show success message
             statusText.text = "Saved as $fileName"
             statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
+
+            // Ensure the button is enabled and visible after saving data
+            showDataButton.isEnabled = true
+            showDataButton.alpha = 1f
 
         } catch (e: IOException) {
             Log.e("MainActivity", "File creation error: ${e.message}")
