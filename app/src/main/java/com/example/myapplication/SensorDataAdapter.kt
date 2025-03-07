@@ -17,10 +17,10 @@ class SensorDataAdapter(
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         // Mevcut görünümler için referanslar
-        val timestampTextView: TextView = itemView.findViewById(R.id.timestampTextView)
-        val xTextView: TextView = itemView.findViewById(R.id.xTextView)
-        val yTextView: TextView = itemView.findViewById(R.id.yTextView)
-        val zTextView: TextView = itemView.findViewById(R.id.zTextView)
+        val timestampTextView: TextView = itemView.findViewById(R.id.tvTimestamp)
+        val xTextView: TextView = itemView.findViewById(R.id.tvSensorValue)
+        val yTextView: TextView = itemView.findViewById(R.id.tvSensorValue)
+        val zTextView: TextView = itemView.findViewById(R.id.tvSensorValue)
 
         // Yeni eklenen görünümler için referanslar (eğer layout dosyasını güncellediyseniz)
         val tvSensorName: TextView? = itemView.findViewById(R.id.tvSensorName)
@@ -51,7 +51,7 @@ class SensorDataAdapter(
         holder.zTextView.text = "Z: ${"%.2f".format(sensorData.z)}"
 
         // Eğer yeni layout'u kullanıyorsanız sensör adını da göster
-        holder.tvSensorName?.text = sensorData.sensorName
+
     }
 
     override fun getItemCount(): Int = sensorDataList.size

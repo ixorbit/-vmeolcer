@@ -1,5 +1,8 @@
 <resources>
-    <!-- Add these to your strings.xml file -->
+    <string name="app_name">My Application</string>
+    <string name="marker_info">Zaman: %1$s\nDeğer: %2$s m/s²</string>
+    <string name="file_error">Dosya hatası!</string>
+    <string name="acceleration">İvme Değerleri</string>
     <string name="no_data_available">No sensor data available</string>
     <string name="no_files_available">No files available</string>
     <string name="view_details">View details</string>
