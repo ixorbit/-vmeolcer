@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -41,6 +42,25 @@ class DataDetailActivity : AppCompatActivity() {
     private val COLOR_TEXT = Color.rgb(200, 200, 200)  // Metin rengi
     private val COLOR_AXIS_LINE = Color.rgb(100, 100, 100)  // Eksen çizgisi
     private val COLOR_CARD_BACKGROUND = Color.rgb(30, 30, 30)  // Kart arkaplan rengi
+
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_data_detail, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_analyze -> {
+                val intent = Intent(this, DataAnalyticsActivity::class.java)
+                intent.putExtra("FILE_NAME", dataFileName)
+                startActivity(intent)
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

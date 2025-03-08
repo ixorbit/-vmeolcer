@@ -33,7 +33,7 @@
         <!-- DataListActivity önce tanımlanmalı -->
         <activity android:name=".DataListActivity" />
         <activity android:name=".DataDetailActivity" />
-
+        <activity android:name=".DataAnalyticsActivity" />
     </application>
 
 </manifest>
