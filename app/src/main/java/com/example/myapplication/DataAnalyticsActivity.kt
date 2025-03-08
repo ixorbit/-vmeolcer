@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
@@ -16,6 +17,12 @@ class DataAnalyticsActivity : AppCompatActivity() {
 
     private lateinit var sensorDataList: List<SensorData>
     private lateinit var anomaliesAdapter: AnomaliesAdapter
+    private lateinit var freeFallDetailsAdapter: FreeFallDetailsAdapter
+
+    private lateinit var rvAnomalies: RecyclerView
+    private lateinit var rvFreeFallDetails: RecyclerView
+    private lateinit var freeFallCard: CardView
+    private lateinit var tvNoFreeFalls: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,6 +34,12 @@ class DataAnalyticsActivity : AppCompatActivity() {
             setDisplayHomeAsUpEnabled(true)
             setDisplayShowHomeEnabled(true)
         }
+
+        // UI elemanlarını bağla
+        rvAnomalies = findViewById(R.id.rvAnomalies)
+        rvFreeFallDetails = findViewById(R.id.rvFreeFallDetails)
+        freeFallCard = findViewById(R.id.freeFallCard)
+        tvNoFreeFalls = findViewById(R.id.tvNoFreeFalls)
 
         // Intent'ten dosya adını al
         val fileName = intent.getStringExtra("FILE_NAME") ?: ""
@@ -44,9 +57,18 @@ class DataAnalyticsActivity : AppCompatActivity() {
             return
         }
 
-        // RecyclerView'ı ayarla
-        val rvAnomalies = findViewById<RecyclerView>(R.id.rvAnomalies)
+        // Anomalileri tespit et
         val anomalies = AnomalyDetector.detectAnomalies(sensorDataList)
+
+        // RecyclerView'ları ayarla
+        setupAnomaliesRecyclerView(anomalies)
+        setupFreeFallDetailsRecyclerView(anomalies)
+
+        // İstatistik verilerini doldur
+        populateStatistics()
+    }
+
+    private fun setupAnomaliesRecyclerView(anomalies: List<AccelerationAnomaly>) {
         anomaliesAdapter = AnomaliesAdapter(anomalies)
         rvAnomalies.adapter = anomaliesAdapter
         rvAnomalies.layoutManager = LinearLayoutManager(this)
@@ -55,9 +77,36 @@ class DataAnalyticsActivity : AppCompatActivity() {
         if (anomalies.isEmpty()) {
             findViewById<TextView>(R.id.tvNoAnomalies).visibility = View.VISIBLE
         }
+    }
 
-        // İstatistik verilerini doldur
-        populateStatistics()
+    private fun setupFreeFallDetailsRecyclerView(anomalies: List<AccelerationAnomaly>) {
+        // Serbest düşüş anomalilerini filtrele
+        val freeFallAnomalies = anomalies.filter {
+            it.type == AccelerationAnomaly.AnomalyType.FREE_FALL
+        }
+
+        if (freeFallAnomalies.isEmpty()) {
+            // Serbest düşüş yoksa bilgi mesajı göster
+            freeFallCard.visibility = View.VISIBLE
+            tvNoFreeFalls.visibility = View.VISIBLE
+            rvFreeFallDetails.visibility = View.GONE
+            return
+        }
+
+        // Her bir serbest düşüş için ayrıntılı analiz yap
+        val freeFallReports = freeFallAnomalies.map { anomaly ->
+            FreeFallAnalysis.analyzeFreeFall(anomaly, sensorDataList)
+        }
+
+        // Adapter'ı ayarla
+        freeFallDetailsAdapter = FreeFallDetailsAdapter(freeFallReports)
+        rvFreeFallDetails.adapter = freeFallDetailsAdapter
+        rvFreeFallDetails.layoutManager = LinearLayoutManager(this)
+
+        // Görünürlüğü ayarla
+        freeFallCard.visibility = View.VISIBLE
+        tvNoFreeFalls.visibility = View.GONE
+        rvFreeFallDetails.visibility = View.VISIBLE
     }
 
     private fun populateStatistics() {

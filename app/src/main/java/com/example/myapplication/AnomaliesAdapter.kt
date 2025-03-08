@@ -50,6 +50,10 @@ class AnomaliesAdapter(private val anomalies: List<AccelerationAnomaly>) :
                 holder.iconImageView.setImageResource(R.drawable.ic_free_fall)
                 holder.iconImageView.setColorFilter(Color.rgb(138, 255, 138)) // Yeşil
             }
+            AccelerationAnomaly.AnomalyType.IMPACT -> {
+                holder.iconImageView.setImageResource(R.drawable.ic_acceleration) // Çarpma için hızlanma ikonu
+                holder.iconImageView.setColorFilter(Color.rgb(255, 0, 0)) // Parlak kırmızı
+            }
             else -> {
                 holder.iconImageView.setImageResource(R.drawable.ic_warning)
                 holder.iconImageView.setColorFilter(Color.LTGRAY)
