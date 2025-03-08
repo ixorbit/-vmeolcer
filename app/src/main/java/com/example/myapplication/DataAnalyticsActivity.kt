@@ -3,6 +3,7 @@ package com.example.myapplication
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +24,7 @@ class DataAnalyticsActivity : AppCompatActivity() {
     private lateinit var rvFreeFallDetails: RecyclerView
     private lateinit var freeFallCard: CardView
     private lateinit var tvNoFreeFalls: TextView
+    private lateinit var freeFallChartsContainer: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +42,7 @@ class DataAnalyticsActivity : AppCompatActivity() {
         rvFreeFallDetails = findViewById(R.id.rvFreeFallDetails)
         freeFallCard = findViewById(R.id.freeFallCard)
         tvNoFreeFalls = findViewById(R.id.tvNoFreeFalls)
+        freeFallChartsContainer = findViewById(R.id.freeFallChartsContainer)
 
         // Intent'ten dosya adını al
         val fileName = intent.getStringExtra("FILE_NAME") ?: ""
@@ -63,6 +66,9 @@ class DataAnalyticsActivity : AppCompatActivity() {
         // RecyclerView'ları ayarla
         setupAnomaliesRecyclerView(anomalies)
         setupFreeFallDetailsRecyclerView(anomalies)
+
+        // Serbest düşüş grafiklerini oluştur
+        createFreeFallCharts(anomalies)
 
         // İstatistik verilerini doldur
         populateStatistics()
@@ -107,6 +113,40 @@ class DataAnalyticsActivity : AppCompatActivity() {
         freeFallCard.visibility = View.VISIBLE
         tvNoFreeFalls.visibility = View.GONE
         rvFreeFallDetails.visibility = View.VISIBLE
+    }
+
+    /**
+     * Serbest düşüş grafiklerini oluşturur
+     */
+    private fun createFreeFallCharts(anomalies: List<AccelerationAnomaly>) {
+        // Serbest düşüş anomalilerini filtrele
+        val freeFallAnomalies = anomalies.filter {
+            it.type == AccelerationAnomaly.AnomalyType.FREE_FALL
+        }
+
+        if (freeFallAnomalies.isEmpty()) {
+            // Serbest düşüş yoksa grafikler bölümünü gizle
+            findViewById<CardView>(R.id.freeFallChartsCard).visibility = View.GONE
+            return
+        }
+
+        // Her bir serbest düşüş için ayrıntılı analiz yap
+        val freeFallReports = freeFallAnomalies.map { anomaly ->
+            FreeFallAnalysis.analyzeFreeFall(anomaly, sensorDataList)
+        }
+
+        // Her rapor için bir grafik oluştur
+        freeFallReports.forEach { report ->
+            // Grafik yöneticisi oluştur ve grafiği ekle
+            val chartManager = FreeFallChartManager(this, report, sensorDataList)
+            val chartView = chartManager.createChartView()
+
+            // Grafiği konteyner'a ekle
+            freeFallChartsContainer.addView(chartView)
+        }
+
+        // Görünürlüğü ayarla
+        findViewById<CardView>(R.id.freeFallChartsCard).visibility = View.VISIBLE
     }
 
     private fun populateStatistics() {

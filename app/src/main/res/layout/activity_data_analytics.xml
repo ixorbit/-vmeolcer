@@ -113,6 +113,46 @@
                     </TableLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
+            <!-- Serbest Düşüş Grafikleri Kartı -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/freeFallChartsCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="#1E1E1E"
+                app:cardCornerRadius="8dp"
+                app:cardElevation="4dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Serbest Düşüş Grafikleri"
+                        android:textColor="#77D2FF"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Serbest düşüşler sırasındaki ivme değişimleri aşağıda grafikle gösterilmiştir. Grafikte düşüş başlangıcı ve sonu özel olarak işaretlenmiştir."
+                        android:textColor="#C8C8C8" />
+
+                    <LinearLayout
+                        android:id="@+id/freeFallChartsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
 
             <!-- Serbest Düşüş Analizleri Kartı -->
             <androidx.cardview.widget.CardView
@@ -163,7 +203,6 @@
                         android:visibility="gone" />
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
-
             <!-- X Ekseni Kart -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
@@ -321,7 +360,6 @@
                     </TableLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
-
             <!-- Z Ekseni Kart -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
