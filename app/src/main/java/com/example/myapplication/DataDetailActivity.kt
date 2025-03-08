@@ -79,6 +79,25 @@ class DataDetailActivity : AppCompatActivity() {
             elevation = 8f
         }
 
+        // Analiz butonunu ayarla
+        findViewById<CardView>(R.id.btnAnalyze).setOnClickListener {
+            // Animasyon efekti ekleyin
+            it.animate()
+                .scaleX(0.95f)
+                .scaleY(0.95f)
+                .setDuration(100)
+                .withEndAction {
+                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+
+                    // Analiz ekranına geçiş
+                    val intent = Intent(this, DataAnalyticsActivity::class.java)
+                    intent.putExtra("FILE_NAME", dataFileName)
+                    startActivity(intent)
+                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                }
+                .start()
+        }
+
         // Dosya adını Intent'ten al
         dataFileName = intent.getStringExtra("FILE_NAME") ?: ""
         supportActionBar?.title = dataFileName
