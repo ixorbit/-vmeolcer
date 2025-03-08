@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.recyclerview.widget.DividerItemDecoration
@@ -15,6 +17,7 @@ class DataListActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var noFilesView: View
+    private var fileList = mutableListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,11 +43,11 @@ class DataListActivity : AppCompatActivity() {
         // Dosyaları al ve filtrele
         val filesDir = getExternalFilesDir(null)
 
-        val fileList = filesDir?.listFiles()?.filter {
+        fileList = filesDir?.listFiles()?.filter {
             it.isFile && it.name.endsWith(".txt")
         }?.sortedByDescending {
             it.lastModified()  // En son kaydedilenleri üstte göster
-        }?.map { it.name } ?: emptyList()
+        }?.map { it.name }?.toMutableList() ?: mutableListOf()
 
         // Eğer dosya yoksa, boş durumu göster
         if (fileList.isEmpty()) {
@@ -64,7 +67,14 @@ class DataListActivity : AppCompatActivity() {
         recyclerView.addItemDecoration(dividerItemDecoration)
 
         // Adaptörü ayarla
-        val adapter = FileListAdapter(fileList, this)
+        val adapter = FileListAdapter(fileList, this) { fileName ->
+            // Dosya silindiğinde çalışacak callback
+            // Eğer tüm dosyalar silindiyse boş durumu göster
+            if (fileList.isEmpty()) {
+                showEmptyState()
+            }
+            Toast.makeText(this, "$fileName silindi", Toast.LENGTH_SHORT).show()
+        }
         recyclerView.adapter = adapter
 
         // Animasyon ekle
@@ -109,6 +119,45 @@ class DataListActivity : AppCompatActivity() {
             repeatCount = ObjectAnimator.INFINITE
             repeatMode = ObjectAnimator.REVERSE
             start()
+        }
+    }
+
+    // Tüm dosyaları silmek için yeni fonksiyon
+    fun deleteAllFiles() {
+        AlertDialog.Builder(this)
+            .setTitle("Tüm Verileri Sil")
+            .setMessage("Tüm kaydedilmiş sensör verilerini silmek istediğinize emin misiniz?")
+            .setPositiveButton("Evet") { _, _ ->
+                val filesDir = getExternalFilesDir(null)
+                filesDir?.listFiles()?.filter {
+                    it.isFile && it.name.endsWith(".txt")
+                }?.forEach { file ->
+                    file.delete()
+                }
+
+                fileList.clear()
+                recyclerView.adapter?.notifyDataSetChanged()
+                showEmptyState()
+                Toast.makeText(this, "Tüm veriler silindi", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("İptal", null)
+            .show()
+    }
+
+    // Menu oluşturmak için (tüm dosyaları silme seçeneği için)
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_data_list, menu)
+        return true
+    }
+
+    // Menu öğesi seçildiğinde
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_delete_all -> {
+                deleteAllFiles()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
     }
 

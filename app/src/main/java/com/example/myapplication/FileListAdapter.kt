@@ -5,6 +5,7 @@ import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
@@ -12,11 +13,15 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class FileListAdapter(private val fileList: List<String>, private val context: Context) :
-    RecyclerView.Adapter<FileListAdapter.ViewHolder>() {
+class FileListAdapter(
+    private val fileList: MutableList<String>,
+    private val context: Context,
+    private val onFileDeleted: (String) -> Unit
+) : RecyclerView.Adapter<FileListAdapter.ViewHolder>() {
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val fileNameTextView: TextView = itemView.findViewById(R.id.fileNameTextView)
+        val deleteButton: ImageButton = itemView.findViewById(R.id.deleteButton)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -38,6 +43,21 @@ class FileListAdapter(private val fileList: List<String>, private val context: C
             if (context is DataListActivity) {
                 context.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
             }
+        }
+
+        // Delete button click listener
+        holder.deleteButton.setOnClickListener {
+            deleteFile(fileName, position)
+        }
+    }
+
+    private fun deleteFile(fileName: String, position: Int) {
+        val file = File(context.getExternalFilesDir(null), fileName)
+        if (file.exists() && file.delete()) {
+            fileList.removeAt(position)
+            notifyItemRemoved(position)
+            notifyItemRangeChanged(position, fileList.size)
+            onFileDeleted(fileName)
         }
     }
 

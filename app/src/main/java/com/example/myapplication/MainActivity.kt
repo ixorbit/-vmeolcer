@@ -241,13 +241,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         startButton.isEnabled = !isRecording
         stopButton.isEnabled = isRecording
 
-        // Show data button is enabled if we have a filename (data has been saved)
-        showDataButton.isEnabled = fileName.isNotEmpty()
+        // showDataButton her zaman aktif olacak
+        showDataButton.isEnabled = true
 
         // Visual feedback for active/inactive buttons
         startButton.alpha = if (isRecording) 0.5f else 1f
         stopButton.alpha = if (isRecording) 1f else 0.5f
-        showDataButton.alpha = if (fileName.isNotEmpty()) 1f else 0.5f
+        showDataButton.alpha = 1f  // Her zaman tam görünür
 
         // Show/hide info card with animation
         if (isRecording) {
@@ -258,6 +258,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             infoCard.animate().alpha(0f).setDuration(300)
                 .withEndAction { infoCard.visibility = View.GONE }.start()
         }
+
     }
 
     private fun resetGraph() {
