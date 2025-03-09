@@ -3,6 +3,7 @@ package com.example.myapplication
 import android.content.Context
 import android.opengl.GLSurfaceView
 import android.opengl.GLU
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import java.nio.ByteBuffer
@@ -50,50 +51,46 @@ class SimpleFallSimulation3D(
         prepareKeyframes()
 
         // İlk kareyi ayarla
-        glSurfaceView.renderer.setKeyframe(
-            if (keyframes.isNotEmpty()) keyframes[0] else
-                FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, 0)
-        )
+        if (keyframes.isNotEmpty()) {
+            glSurfaceView.renderer.setKeyframe(keyframes[0])
+            Log.d("SimpleFallSimulation3D", "İlk kare ayarlandı: ${keyframes[0]}")
+        } else {
+            Log.e("SimpleFallSimulation3D", "Keyframe hesaplanamadı!")
+        }
 
         // Hazırlık tamamlandı
         onSimulationPreparedListener?.invoke()
     }
 
     /**
-     * Anahtar kareleri hazırla
+     * Anahtar kareleri hazırla - TÜM hareketleri kaydetmek için değiştirildi
      */
     private fun prepareKeyframes() {
         try {
-            // Düşüş başlangıç ve bitiş indekslerini bul
-            val startIndex = sensorDataList.indexOfFirst { it.timestamp == freeFallReport.startTime }
-            val endIndex = sensorDataList.indexOfFirst { it.timestamp == freeFallReport.endTime }
-
-            if (startIndex == -1 || endIndex == -1 || startIndex >= endIndex) {
-                return
-            }
-
-            // Simülasyon verileri
-            val fallData = sensorDataList.subList(startIndex, endIndex + 1)
-
-            // İvmelerden hesaplanan pozisyonlar
-            var x = 0f
-            var y = 0f
-            var z = 0f
+            // Tüm sensör verileri için anahtar kare oluştur
             var vx = 0f
             var vy = 0f
             var vz = 0f
-            var lastTime = fallData.firstOrNull()?.timestamp ?: 0L
+            var x = 0f
+            var y = 0f
+            var z = 0f
+            var lastTime = sensorDataList.firstOrNull()?.timestamp ?: 0L
 
             keyframes.clear()
-            for (data in fallData) {
+
+            Log.d("SimpleFallSimulation3D", "Sensör veri sayısı: ${sensorDataList.size}")
+
+            // Tüm veri için keyframe oluştur
+            for (data in sensorDataList) {
                 // Zaman farkını hesapla (saniye cinsinden)
                 val dt = (data.timestamp - lastTime) / 1000f
+                if (dt <= 0) continue // Bazen aynı timestamp olabilir
                 lastTime = data.timestamp
 
                 // Hız değişimleri (ivme × zaman)
-                vx += data.x * dt
-                vy += data.y * dt
-                vz += (data.z - 9.81f) * dt  // Yerçekimi düzeltmesi
+                vx += data.x * dt * 0.1f
+                vy += data.y * dt * 0.1f
+                vz += (data.z - 9.81f) * dt * 0.1f  // Yerçekimi düzeltmesi
 
                 // Pozisyon değişimleri (hız × zaman)
                 x += vx * dt
@@ -102,16 +99,28 @@ class SimpleFallSimulation3D(
 
                 // Keyframe oluştur
                 keyframes.add(FallKeyframe(
-                    x = x * 0.1f,  // Ölçek faktörü
-                    y = y * 0.1f,
-                    z = z * 0.1f,
+                    x = x * 0.05f,  // Ölçek faktörü
+                    y = y * 0.05f,
+                    z = z * 0.05f,
                     rotX = data.rotX * 57.3f,  // Radyan -> Derece
                     rotY = data.rotY * 57.3f,
                     rotZ = data.rotZ * 57.3f,
                     timestamp = data.timestamp
                 ))
             }
+
+            Log.d("SimpleFallSimulation3D", "Toplam ${keyframes.size} keyframe oluşturuldu")
+
+            // Serbest düşüş aralığını bul ve vurgula
+            val startIndex = keyframes.indexOfFirst { it.timestamp == freeFallReport.startTime }
+            val endIndex = keyframes.indexOfFirst { it.timestamp == freeFallReport.endTime }
+
+            if (startIndex != -1 && endIndex != -1) {
+                Log.d("SimpleFallSimulation3D", "Düşüş aralığı: $startIndex - $endIndex")
+            }
+
         } catch (e: Exception) {
+            Log.e("SimpleFallSimulation3D", "Keyframe oluşturma hatası: ${e.message}")
             e.printStackTrace()
         }
     }
@@ -120,8 +129,13 @@ class SimpleFallSimulation3D(
      * Simülasyonu oynat
      */
     fun play() {
-        if (keyframes.isEmpty()) return
+        if (keyframes.isEmpty()) {
+            Log.e("SimpleFallSimulation3D", "Keyframe yok, oynatma iptal edildi")
+            return
+        }
+
         isPlaying = true
+        Log.d("SimpleFallSimulation3D", "Simülasyon başlatıldı, ${keyframes.size} kare.")
         animateFrames()
     }
 
@@ -130,6 +144,7 @@ class SimpleFallSimulation3D(
      */
     fun pause() {
         isPlaying = false
+        Log.d("SimpleFallSimulation3D", "Simülasyon duraklatıldı.")
     }
 
     /**
@@ -139,6 +154,7 @@ class SimpleFallSimulation3D(
         currentFrameIndex = 0
         if (keyframes.isNotEmpty()) {
             glSurfaceView.renderer.setKeyframe(keyframes[0])
+            Log.d("SimpleFallSimulation3D", "Simülasyon sıfırlandı.")
         }
         isPlaying = false
         onProgressUpdateListener?.invoke(0)
@@ -154,24 +170,34 @@ class SimpleFallSimulation3D(
         currentFrameIndex = targetFrame.coerceIn(0, keyframes.size - 1)
         glSurfaceView.renderer.setKeyframe(keyframes[currentFrameIndex])
         onProgressUpdateListener?.invoke(progressPercent)
+        Log.d("SimpleFallSimulation3D", "İlerleme: %$progressPercent, Kare: $currentFrameIndex")
     }
 
     /**
      * Kareleri animasyonlu göster
      */
     private fun animateFrames() {
-        if (!isPlaying || currentFrameIndex >= keyframes.size - 1) {
+        if (!isPlaying) {
+            Log.d("SimpleFallSimulation3D", "Animasyon durduruldu.")
             return
         }
 
-        glSurfaceView.renderer.setKeyframe(keyframes[currentFrameIndex])
+        if (currentFrameIndex >= keyframes.size - 1) {
+            Log.d("SimpleFallSimulation3D", "Animasyon tamamlandı.")
+            isPlaying = false
+            return
+        }
+
+        val currentFrame = keyframes[currentFrameIndex]
+        glSurfaceView.renderer.setKeyframe(currentFrame)
+
         val progress = (currentFrameIndex * 100) / keyframes.size
         onProgressUpdateListener?.invoke(progress)
 
         currentFrameIndex++
 
         // Sonraki kareyi göstermek için zamanlayıcı
-        glSurfaceView.postDelayed({ animateFrames() }, 50L)
+        glSurfaceView.postDelayed({ animateFrames() }, 16L) // ~60fps
     }
 
     /**
@@ -217,50 +243,59 @@ class SimpleFallSimulation3D(
     inner class FallRenderer : GLSurfaceView.Renderer {
         private var currentKeyframe = FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, 0)
 
-        // Telefon modeli (basit dikdörtgen prizma)
+        // Telefon modeli (daha gerçekçi şekil)
         private val vertices = floatArrayOf(
-            // Ön yüz
-            -0.5f, -1.0f, 0.15f,  // 0
-            0.5f, -1.0f, 0.15f,   // 1
-            0.5f, 1.0f, 0.15f,    // 2
-            -0.5f, 1.0f, 0.15f,   // 3
+            // Ön
+            -0.4f, -0.8f, 0.05f,
+            0.4f, -0.8f, 0.05f,
+            0.4f, 0.8f, 0.05f,
+            -0.4f, 0.8f, 0.05f,
 
-            // Arka yüz
-            -0.5f, -1.0f, -0.15f, // 4
-            0.5f, -1.0f, -0.15f,  // 5
-            0.5f, 1.0f, -0.15f,   // 6
-            -0.5f, 1.0f, -0.15f   // 7
+            // Arka
+            -0.4f, -0.8f, -0.05f,
+            0.4f, -0.8f, -0.05f,
+            0.4f, 0.8f, -0.05f,
+            -0.4f, 0.8f, -0.05f,
+
+            // Ekran (biraz çıkıntılı)
+            -0.35f, -0.75f, 0.051f,
+            0.35f, -0.75f, 0.051f,
+            0.35f, 0.75f, 0.051f,
+            -0.35f, 0.75f, 0.051f,
         )
 
         // Yüz indeksleri
         private val indices = byteArrayOf(
-            // Ön
-            0, 1, 2, 0, 2, 3,
-            // Sağ
-            1, 5, 6, 1, 6, 2,
-            // Arka
-            5, 4, 7, 5, 7, 6,
-            // Sol
-            4, 0, 3, 4, 3, 7,
-            // Üst
-            3, 2, 6, 3, 6, 7,
-            // Alt
-            4, 5, 1, 4, 1, 0
+            // Gövde
+            0, 1, 2, 0, 2, 3,  // Ön
+            4, 5, 6, 4, 6, 7,  // Arka
+            0, 1, 5, 0, 5, 4,  // Alt
+            3, 2, 6, 3, 6, 7,  // Üst
+            0, 3, 7, 0, 7, 4,  // Sol
+            1, 2, 6, 1, 6, 5,  // Sağ
+
+            // Ekran
+            8, 9, 10, 8, 10, 11
         )
 
-        // Renkler (çizilecek her köşe için)
+        // Renkler (her köşe için)
         private val colors = floatArrayOf(
-            // Ön yüz
-            0.0f, 0.5f, 1.0f, 1.0f, // mavi
-            0.0f, 0.5f, 1.0f, 1.0f,
-            0.0f, 0.5f, 1.0f, 1.0f,
-            0.0f, 0.5f, 1.0f, 1.0f,
+            // Telefon gövdesi (koyu gri)
+            0.3f, 0.3f, 0.3f, 1.0f,
+            0.3f, 0.3f, 0.3f, 1.0f,
+            0.3f, 0.3f, 0.3f, 1.0f,
+            0.3f, 0.3f, 0.3f, 1.0f,
 
-            // Arka yüz
-            0.0f, 0.4f, 0.8f, 1.0f, // daha koyu mavi
-            0.0f, 0.4f, 0.8f, 1.0f,
-            0.0f, 0.4f, 0.8f, 1.0f,
-            0.0f, 0.4f, 0.8f, 1.0f
+            0.25f, 0.25f, 0.25f, 1.0f,
+            0.25f, 0.25f, 0.25f, 1.0f,
+            0.25f, 0.25f, 0.25f, 1.0f,
+            0.25f, 0.25f, 0.25f, 1.0f,
+
+            // Ekran (açık mavi)
+            0.0f, 0.5f, 0.9f, 1.0f,
+            0.0f, 0.5f, 0.9f, 1.0f,
+            0.0f, 0.5f, 0.9f, 1.0f,
+            0.0f, 0.5f, 0.9f, 1.0f
         )
 
         private lateinit var vertexBuffer: FloatBuffer
@@ -279,14 +314,17 @@ class SimpleFallSimulation3D(
          * Yüzey oluşturulduğunda
          */
         override fun onSurfaceCreated(gl: GL10, config: EGLConfig) {
-            // Arkaplan rengi (koyu mavi)
-            gl.glClearColor(0.0f, 0.0f, 0.2f, 1.0f)
+            // Arkaplan rengi (koyu mavi-gri)
+            gl.glClearColor(0.1f, 0.15f, 0.25f, 1.0f)
 
-            // Derinlik testi ve culling etkinleştir
+            // Derinlik testi, culling ve ışıklandırma
             gl.glEnable(GL10.GL_DEPTH_TEST)
             gl.glDepthFunc(GL10.GL_LEQUAL)
             gl.glEnable(GL10.GL_CULL_FACE)
             gl.glCullFace(GL10.GL_BACK)
+
+            // Smooth shading
+            gl.glShadeModel(GL10.GL_SMOOTH)
 
             // Vertex buffer oluştur
             val vbb = ByteBuffer.allocateDirect(vertices.size * 4)
@@ -331,10 +369,27 @@ class SimpleFallSimulation3D(
             gl.glClear(GL10.GL_COLOR_BUFFER_BIT or GL10.GL_DEPTH_BUFFER_BIT)
             gl.glLoadIdentity()
 
-            // Kamera pozisyonu
-            GLU.gluLookAt(gl, 0f, 0f, 5f, 0f, 0f, 0f, 0f, 1f, 0f)
+            // Kamera pozisyonu (biraz uzaktan ve yüksekten bak)
+            GLU.gluLookAt(gl, 0f, 2f, 5f, 0f, 0f, 0f, 0f, 1f, 0f)
+
+            // Işıklandırma etkinleştir
+            gl.glEnable(GL10.GL_LIGHTING)
+            gl.glEnable(GL10.GL_LIGHT0)
+
+            // Ambient ve diffuse ışık renkleri
+            val ambientLight = floatArrayOf(0.3f, 0.3f, 0.4f, 1f)
+            val diffuseLight = floatArrayOf(0.7f, 0.7f, 0.7f, 1f)
+            val lightPosition = floatArrayOf(5f, 5f, 5f, 1f)
+
+            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_AMBIENT, ambientLight, 0)
+            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_DIFFUSE, diffuseLight, 0)
+            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_POSITION, lightPosition, 0)
+
+            // Yer gösterimi (grid)
+            drawGrid(gl)
 
             // Telefon pozisyonu ve rotasyonu
+            gl.glPushMatrix()
             gl.glTranslatef(
                 currentKeyframe.x,
                 currentKeyframe.y,
@@ -346,27 +401,14 @@ class SimpleFallSimulation3D(
             gl.glRotatef(currentKeyframe.rotY, 0f, 1f, 0f)
             gl.glRotatef(currentKeyframe.rotZ, 0f, 0f, 1f)
 
-            // Işıklandırma etkinleştir
-            gl.glEnable(GL10.GL_LIGHTING)
-            gl.glEnable(GL10.GL_LIGHT0)
-
-            // Ambient ve diffuse ışık renkleri
-            val ambientLight = floatArrayOf(0.2f, 0.2f, 0.2f, 1f)
-            val diffuseLight = floatArrayOf(1f, 1f, 1f, 1f)
-            val lightPosition = floatArrayOf(0f, 0f, 5f, 1f)
-
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_AMBIENT, ambientLight, 0)
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_DIFFUSE, diffuseLight, 0)
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_POSITION, lightPosition, 0)
-
             // Malzeme özellikleri
-            val materialAmbient = floatArrayOf(0.1f, 0.1f, 0.6f, 1f)
-            val materialDiffuse = floatArrayOf(0.2f, 0.2f, 0.8f, 1f)
+            val materialAmbient = floatArrayOf(0.3f, 0.3f, 0.3f, 1f)
+            val materialDiffuse = floatArrayOf(0.7f, 0.7f, 0.7f, 1f)
 
-            gl.glMaterialfv(GL10.GL_FRONT_AND_BACK, GL10.GL_AMBIENT, materialAmbient, 0)
-            gl.glMaterialfv(GL10.GL_FRONT_AND_BACK, GL10.GL_DIFFUSE, materialDiffuse, 0)
+            gl.glMaterialfv(GL10.GL_FRONT, GL10.GL_AMBIENT, materialAmbient, 0)
+            gl.glMaterialfv(GL10.GL_FRONT, GL10.GL_DIFFUSE, materialDiffuse, 0)
 
-            // Vertex ve indeks buffer kullanarak çiz
+            // Vertex ve renk arraylerini etkinleştir
             gl.glEnableClientState(GL10.GL_VERTEX_ARRAY)
             gl.glEnableClientState(GL10.GL_COLOR_ARRAY)
 
@@ -376,7 +418,40 @@ class SimpleFallSimulation3D(
 
             gl.glDisableClientState(GL10.GL_COLOR_ARRAY)
             gl.glDisableClientState(GL10.GL_VERTEX_ARRAY)
+
+            gl.glPopMatrix()
+
             gl.glDisable(GL10.GL_LIGHTING)
+        }
+
+        /**
+         * Zemin grid çizimi
+         */
+        private fun drawGrid(gl: GL10) {
+            gl.glDisable(GL10.GL_LIGHTING)
+
+            gl.glLineWidth(1f)
+            gl.glColor4f(0.5f, 0.5f, 0.5f, 0.5f)
+
+            // Grid çiz
+            val gridSize = 10
+            val gridStep = 0.5f
+
+            gl.glBegin(GL10.GL_LINES)
+            for (i in -gridSize..gridSize) {
+                val pos = i * gridStep
+
+                // X çizgileri
+                gl.glVertex3f(-gridSize * gridStep, -2f, pos)
+                gl.glVertex3f(gridSize * gridStep, -2f, pos)
+
+                // Z çizgileri
+                gl.glVertex3f(pos, -2f, -gridSize * gridStep)
+                gl.glVertex3f(pos, -2f, gridSize * gridStep)
+            }
+            gl.glEnd()
+
+            gl.glEnable(GL10.GL_LIGHTING)
         }
     }
 }

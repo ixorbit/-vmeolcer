@@ -114,12 +114,27 @@ class Fall3DSimulationActivity : AppCompatActivity() {
                 btnPlayPause.isEnabled = true
                 btnReset.isEnabled = true
                 seekBarSimulation.isEnabled = true
-                Toast.makeText(this, "Simülasyon hazır", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Simülasyon hazır, oynatmak için 'Oynat' butonuna basın", Toast.LENGTH_SHORT).show()
+
+                // Animasyonu otomatik başlat (yorum satırını kaldırarak aktifleştirebilirsiniz)
+                // startSimulation()
             }
         }
 
         // Simülasyonu başlat
         simulation3D.startSimulation(simulationContainer)
+    }
+
+    private fun startSimulation() {
+        if (!isSimulationPrepared) return
+
+        // Durdur butonunu göster
+        btnPlayPause.text = "Durdur"
+        isSimulationPlaying = true
+
+        // Animasyonu başlat
+        simulation3D.reset() // Önce sıfırla
+        simulation3D.play()  // Sonra oynat
     }
 
     private fun setupUIControls() {
