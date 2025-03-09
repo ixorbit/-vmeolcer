@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
     private var fileName: String = ""
-    private lateinit var gyroscope: Sensor?
+    private var gyroscope: Sensor? = null  // lateinit kaldırıldı, ? işareti değişkeni nullable yaptı
     private var rotationX = 0f
     private var rotationY = 0f
     private var rotationZ = 0f
@@ -402,8 +402,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if(isRunning) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         }
-        if(isRunning) {
-            sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_NORMAL)
+        gyroscope?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
     }
 

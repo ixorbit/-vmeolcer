@@ -25,7 +25,7 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     private lateinit var tvSimulationInfo: TextView
 
     private lateinit var sensorDataList: List<SensorData>
-    private lateinit var simulation3D: FallSimulation3D
+    private lateinit var simulation3D: SimpleFallSimulation3D  // Basit 3D simülasyon sınıfı kullanılıyor
 
     private var isSimulationPlaying = false
     private var isSimulationPrepared = false
@@ -96,7 +96,8 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     }
 
     private fun initializeSimulation(freeFallReport: FreeFallAnalysis.FreeFallReport) {
-        simulation3D = FallSimulation3D(this, sensorDataList, freeFallReport)
+        // SimpleFallSimulation3D sınıfını kullan
+        simulation3D = SimpleFallSimulation3D(this, sensorDataList, freeFallReport)
 
         // İlerleme güncellemeleri için listener
         simulation3D.setOnProgressUpdateListener { progress ->
