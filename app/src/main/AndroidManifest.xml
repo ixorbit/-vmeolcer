@@ -34,6 +34,11 @@
         <activity android:name=".DataListActivity" />
         <activity android:name=".DataDetailActivity" />
         <activity android:name=".DataAnalyticsActivity" />
+
+        <!-- Yeni 3D Simülasyon Activity'si -->
+        <activity
+            android:name=".Fall3DSimulationActivity"
+            android:label="3D Düşüş Simülasyonu" />
     </application>
 
 </manifest>

@@ -40,6 +40,15 @@ dependencies {
     implementation 'androidx.sqlite:sqlite:2.2.0'
     implementation 'androidx.sqlite:sqlite-framework:2.2.0'
     implementation 'com.jjoe64:graphview:4.2.2'
+
+    // SceneView - 3D Görselleştirme için
+    implementation 'io.github.sceneview:sceneview:0.10.0'
+
+    // Filament ve Android 3D modelleme için gerekli kütüphaneler
+    implementation 'com.google.android.filament:filament-android:1.32.0'
+    implementation 'com.google.android.filament:filament-utils-android:1.32.0'
+    implementation 'com.google.android.filament:gltfio-android:1.32.0'
+
     implementation libs.androidx.core.ktx
     implementation libs.androidx.appcompat
     implementation libs.material

@@ -98,6 +98,24 @@ class DataDetailActivity : AppCompatActivity() {
                 .start()
         }
 
+        findViewById<CardView>(R.id.btn3DSimulation).setOnClickListener {
+            // Animasyon efekti ekle
+            it.animate()
+                .scaleX(0.95f)
+                .scaleY(0.95f)
+                .setDuration(100)
+                .withEndAction {
+                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+
+                    // 3D Simülasyon ekranına geçiş
+                    val intent = Intent(this, Fall3DSimulationActivity::class.java)
+                    intent.putExtra("FILE_NAME", dataFileName)
+                    startActivity(intent)
+                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                }
+                .start()
+        }
+
         // Dosya adını Intent'ten al
         dataFileName = intent.getStringExtra("FILE_NAME") ?: ""
         supportActionBar?.title = dataFileName
@@ -379,19 +397,41 @@ class DataDetailActivity : AppCompatActivity() {
             }
 
             file.bufferedReader().useLines { lines ->
+                // Başlık satırını atla
+                var isFirstLine = true
+
                 lines.forEach { line ->
+                    if (isFirstLine) {
+                        isFirstLine = false
+                        return@forEach
+                    }
+
                     if (line.isNotBlank()) {
                         val parts = line.split(",")
-                        if (parts.size == 4) {
-                            try {
+                        try {
+                            // Tüm değerleri oku
+                            if (parts.size >= 4) {
                                 val timestamp = parts[0].toLong()
                                 val x = parts[1].toFloat()
                                 val y = parts[2].toFloat()
                                 val z = parts[3].toFloat()
-                                sensorDataList.add(SensorData(timestamp, x, y, z))
-                            } catch (e: NumberFormatException) {
-                                Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
+
+                                // Rotasyon ve gyroscope verilerini al (varsa)
+                                val rotX = if (parts.size > 4) parts[4].toFloatOrNull() ?: 0f else 0f
+                                val rotY = if (parts.size > 5) parts[5].toFloatOrNull() ?: 0f else 0f
+                                val rotZ = if (parts.size > 6) parts[6].toFloatOrNull() ?: 0f else 0f
+                                val gyroX = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f
+                                val gyroY = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f
+                                val gyroZ = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f
+
+                                sensorDataList.add(SensorData(
+                                    timestamp, x, y, z,
+                                    rotX, rotY, rotZ,
+                                    gyroX, gyroY, gyroZ
+                                ))
                             }
+                        } catch (e: NumberFormatException) {
+                            Log.e("DataDetailActivity", "Veri ayrıştırma hatası: $line", e)
                         }
                     }
                 }

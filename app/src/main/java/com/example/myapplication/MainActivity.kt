@@ -39,6 +39,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
     private var fileName: String = ""
+    private lateinit var gyroscope: Sensor?
+    private var rotationX = 0f
+    private var rotationY = 0f
+    private var rotationZ = 0f
+    private var lastGyroX = 0f
+    private var lastGyroY = 0f
+    private var lastGyroZ = 0f
+    private var lastGyroTimestamp = 0L
 
     // UI elements
     private lateinit var startButton: Button
@@ -79,6 +87,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         // Set up sensor manager
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
         // Initialize database helper
         dbHelper = DatabaseHelper(this)
@@ -288,8 +297,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             val sensorDataList = dbHelper.getAllSensorData()
             file.bufferedWriter().use { out ->
+                // Başlık satırını yaz
+                out.write("timestamp,accel_x,accel_y,accel_z,rotation_x,rotation_y,rotation_z,gyro_x,gyro_y,gyro_z\n")
+
                 sensorDataList.forEach { sensorData ->
-                    out.write("${sensorData.timestamp},${sensorData.x},${sensorData.y},${sensorData.z}\n")
+                    out.write("${sensorData.timestamp},${sensorData.x},${sensorData.y},${sensorData.z}," +
+                            "${sensorData.rotX},${sensorData.rotY},${sensorData.rotZ}," +
+                            "${sensorData.gyroX},${sensorData.gyroY},${sensorData.gyroZ}\n")
                 }
             }
 
@@ -340,20 +354,56 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (isRunning && event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            val x = event.values[0]
-            val y = event.values[1]
-            val z = event.values[2]
-            Log.d("SENSOR_DATA", "X: $x, Y: $y, Z: $z")
-            updateGraph(x, y, z)
-            dbHelper.addSensorData(System.currentTimeMillis(), x, y, z)
+        if (isRunning) {
+            when (event?.sensor?.type) {
+                Sensor.TYPE_ACCELEROMETER -> {
+                    val x = event.values[0]
+                    val y = event.values[1]
+                    val z = event.values[2]
+                    Log.d("SENSOR_DATA", "X: $x, Y: $y, Z: $z")
+                    updateGraph(x, y, z)
+
+                    // Rotasyon verilerini de içerecek şekilde kaydet
+                    dbHelper.addSensorData(
+                        System.currentTimeMillis(),
+                        x, y, z,
+                        rotationX, rotationY, rotationZ,
+                        lastGyroX, lastGyroY, lastGyroZ
+                    )
+                }
+                Sensor.TYPE_GYROSCOPE -> {
+                    val currentTime = System.currentTimeMillis()
+
+                    // Gyroscope verilerini al
+                    lastGyroX = event.values[0]
+                    lastGyroY = event.values[1]
+                    lastGyroZ = event.values[2]
+
+                    // Eğer önceden zaman kaydedilmişse rotasyon hesapla
+                    if (lastGyroTimestamp != 0L) {
+                        // Zaman farkını saniye cinsinden hesapla
+                        val dT = (currentTime - lastGyroTimestamp) / 1000f
+
+                        // Açısal hızdan rotasyona çevir (basit entegrasyon)
+                        rotationX += lastGyroX * dT
+                        rotationY += lastGyroY * dT
+                        rotationZ += lastGyroZ * dT
+                    }
+
+                    lastGyroTimestamp = currentTime
+                }
+            }
         }
     }
+
 
     override fun onResume() {
         super.onResume()
         if(isRunning) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+        if(isRunning) {
+            sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_NORMAL)
         }
     }
 
