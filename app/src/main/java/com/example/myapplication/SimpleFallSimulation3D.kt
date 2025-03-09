@@ -437,19 +437,45 @@ class SimpleFallSimulation3D(
             val gridSize = 10
             val gridStep = 0.5f
 
-            gl.glBegin(GL10.GL_LINES)
+            // Vertex array boyutunu hesapla: Her çizgi 2 nokta ve toplam (gridSize*2+1)*2 çizgi
+            val vertexCount = (gridSize * 2 + 1) * 4
+            val vertices = FloatArray(vertexCount * 3) // Her vertex için x,y,z
+
+            var index = 0
             for (i in -gridSize..gridSize) {
                 val pos = i * gridStep
 
-                // X çizgileri
-                gl.glVertex3f(-gridSize * gridStep, -2f, pos)
-                gl.glVertex3f(gridSize * gridStep, -2f, pos)
+                // X çizgileri için 2 vertex
+                vertices[index++] = -gridSize * gridStep // x1
+                vertices[index++] = -2f                  // y1
+                vertices[index++] = pos                  // z1
 
-                // Z çizgileri
-                gl.glVertex3f(pos, -2f, -gridSize * gridStep)
-                gl.glVertex3f(pos, -2f, gridSize * gridStep)
+                vertices[index++] = gridSize * gridStep  // x2
+                vertices[index++] = -2f                  // y2
+                vertices[index++] = pos                  // z2
+
+                // Z çizgileri için 2 vertex
+                vertices[index++] = pos                  // x1
+                vertices[index++] = -2f                  // y1
+                vertices[index++] = -gridSize * gridStep // z1
+
+                vertices[index++] = pos                  // x2
+                vertices[index++] = -2f                  // y2
+                vertices[index++] = gridSize * gridStep  // z2
             }
-            gl.glEnd()
+
+            // Vertex array için ByteBuffer oluştur
+            val vertexBuffer = ByteBuffer.allocateDirect(vertices.size * 4)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+            vertexBuffer.put(vertices)
+            vertexBuffer.position(0)
+
+            // Vertex array çiz
+            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY)
+            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, vertexBuffer)
+            gl.glDrawArrays(GL10.GL_LINES, 0, vertexCount)
+            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY)
 
             gl.glEnable(GL10.GL_LIGHTING)
         }
