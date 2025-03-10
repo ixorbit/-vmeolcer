@@ -67,32 +67,46 @@ class SimpleFallSimulation3D(
      */
     private fun prepareKeyframes() {
         try {
-            // Tüm sensör verileri için anahtar kare oluştur
+            // Sensör veri sayısını logla
+            Log.d("SimpleFallSimulation3D", "Sensör veri sayısı: ${sensorDataList.size}")
+
+            if (sensorDataList.isEmpty()) {
+                Log.e("SimpleFallSimulation3D", "Sensör verisi boş!")
+                return
+            }
+
+            // Düzgün simulasyon için başlangıç noktası
             var vx = 0f
             var vy = 0f
             var vz = 0f
             var x = 0f
             var y = 0f
             var z = 0f
-            var lastTime = sensorDataList.firstOrNull()?.timestamp ?: 0L
 
+            // İlk zaman damgasını referans al
+            var lastTime = sensorDataList.firstOrNull()?.timestamp ?: 0L
             keyframes.clear()
 
-            Log.d("SimpleFallSimulation3D", "Sensör veri sayısı: ${sensorDataList.size}")
+            // Veri noktalarından keyframe oluştur
+            var skipCounter = 0
+            val skipFactor = if (sensorDataList.size > 1000) 5 else 1 // Veri çok fazlaysa optimizasyon yap
 
-            // Tüm veri için keyframe oluştur
-            for (data in sensorDataList) {
-                // Zaman farkını hesapla (saniye cinsinden)
+            sensorDataList.forEach { data ->
+                // Çok fazla veri olduğunda her noktayı işleme - performans için
+                skipCounter++
+                if (skipCounter % skipFactor != 0 && skipCounter > 1) return@forEach
+
+                // Zaman farkını hesapla
                 val dt = (data.timestamp - lastTime) / 1000f
-                if (dt <= 0) continue // Bazen aynı timestamp olabilir
+                if (dt <= 0) return@forEach // Aynı zaman damgası varsa atla
                 lastTime = data.timestamp
 
-                // Hız değişimleri (ivme × zaman)
+                // Hız değişimlerini hesapla (daha belirgin hareketler için katsayı ekledik)
                 vx += data.x * dt * 0.1f
                 vy += data.y * dt * 0.1f
                 vz += (data.z - 9.81f) * dt * 0.1f  // Yerçekimi düzeltmesi
 
-                // Pozisyon değişimleri (hız × zaman)
+                // Konum değişimleri
                 x += vx * dt
                 y += vy * dt
                 z += vz * dt
@@ -102,7 +116,7 @@ class SimpleFallSimulation3D(
                     x = x * 0.05f,  // Ölçek faktörü
                     y = y * 0.05f,
                     z = z * 0.05f,
-                    rotX = data.rotX * 57.3f,  // Radyan -> Derece
+                    rotX = data.rotX * 57.3f,  // Radyan -> Derece dönüşümü
                     rotY = data.rotY * 57.3f,
                     rotZ = data.rotZ * 57.3f,
                     timestamp = data.timestamp
@@ -111,17 +125,18 @@ class SimpleFallSimulation3D(
 
             Log.d("SimpleFallSimulation3D", "Toplam ${keyframes.size} keyframe oluşturuldu")
 
-            // Serbest düşüş aralığını bul ve vurgula
-            val startIndex = keyframes.indexOfFirst { it.timestamp == freeFallReport.startTime }
-            val endIndex = keyframes.indexOfFirst { it.timestamp == freeFallReport.endTime }
-
-            if (startIndex != -1 && endIndex != -1) {
-                Log.d("SimpleFallSimulation3D", "Düşüş aralığı: $startIndex - $endIndex")
+            if (keyframes.isEmpty()) {
+                // Hata önlemi - en az bir keyframe olmalı
+                Log.e("SimpleFallSimulation3D", "Keyframe oluşturulamadı!")
+                keyframes.add(FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, System.currentTimeMillis()))
             }
 
         } catch (e: Exception) {
             Log.e("SimpleFallSimulation3D", "Keyframe oluşturma hatası: ${e.message}")
             e.printStackTrace()
+
+            // Hata durumunda en azından bir keyframe ekle
+            keyframes.add(FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, System.currentTimeMillis()))
         }
     }
 
@@ -136,6 +151,12 @@ class SimpleFallSimulation3D(
 
         isPlaying = true
         Log.d("SimpleFallSimulation3D", "Simülasyon başlatıldı, ${keyframes.size} kare.")
+
+        // Durduktan sonra devam etmek için bu kontrolü ekleyelim
+        if (currentFrameIndex >= keyframes.size - 1) {
+            currentFrameIndex = 0 // Bitmiş bir animasyonu tekrar başlat
+        }
+
         animateFrames()
     }
 
@@ -151,12 +172,14 @@ class SimpleFallSimulation3D(
      * Simülasyonu sıfırla
      */
     fun reset() {
+        isPlaying = false // Önce durdur
         currentFrameIndex = 0
+
         if (keyframes.isNotEmpty()) {
             glSurfaceView.renderer.setKeyframe(keyframes[0])
             Log.d("SimpleFallSimulation3D", "Simülasyon sıfırlandı.")
         }
-        isPlaying = false
+
         onProgressUpdateListener?.invoke(0)
     }
 
@@ -182,22 +205,34 @@ class SimpleFallSimulation3D(
             return
         }
 
-        if (currentFrameIndex >= keyframes.size - 1) {
+        if (keyframes.isEmpty() || currentFrameIndex >= keyframes.size - 1) {
             Log.d("SimpleFallSimulation3D", "Animasyon tamamlandı.")
             isPlaying = false
+            onProgressUpdateListener?.invoke(100)
             return
         }
 
-        val currentFrame = keyframes[currentFrameIndex]
-        glSurfaceView.renderer.setKeyframe(currentFrame)
+        try {
+            // Mevcut kareyi göster
+            val currentFrame = keyframes[currentFrameIndex]
+            glSurfaceView.renderer.setKeyframe(currentFrame)
 
-        val progress = (currentFrameIndex * 100) / keyframes.size
-        onProgressUpdateListener?.invoke(progress)
+            // İlerlemeyi güncelle
+            val progress = (currentFrameIndex * 100) / (keyframes.size - 1)
+            onProgressUpdateListener?.invoke(progress)
 
-        currentFrameIndex++
+            // Sonraki kareye geç
+            currentFrameIndex++
 
-        // Sonraki kareyi göstermek için zamanlayıcı
-        glSurfaceView.postDelayed({ animateFrames() }, 16L) // ~60fps
+            // Sonraki kareyi göstermek için zamanlayıcı (daha güvenilir yöntem)
+            glSurfaceView.postDelayed({
+                if (isPlaying) animateFrames()
+            }, 16L) // ~60fps
+
+        } catch (e: Exception) {
+            Log.e("SimpleFallSimulation3D", "Animasyon hatası: ${e.message}")
+            isPlaying = false
+        }
     }
 
     /**
@@ -437,7 +472,7 @@ class SimpleFallSimulation3D(
             val gridSize = 10
             val gridStep = 0.5f
 
-            // Vertex array boyutunu hesapla: Her çizgi 2 nokta ve toplam (gridSize*2+1)*2 çizgi
+            // Vertex dizisi oluştur
             val vertexCount = (gridSize * 2 + 1) * 4
             val vertices = FloatArray(vertexCount * 3) // Her vertex için x,y,z
 
@@ -445,7 +480,7 @@ class SimpleFallSimulation3D(
             for (i in -gridSize..gridSize) {
                 val pos = i * gridStep
 
-                // X çizgileri için 2 vertex
+                // X çizgileri için 2 nokta
                 vertices[index++] = -gridSize * gridStep // x1
                 vertices[index++] = -2f                  // y1
                 vertices[index++] = pos                  // z1
@@ -454,7 +489,7 @@ class SimpleFallSimulation3D(
                 vertices[index++] = -2f                  // y2
                 vertices[index++] = pos                  // z2
 
-                // Z çizgileri için 2 vertex
+                // Z çizgileri için 2 nokta
                 vertices[index++] = pos                  // x1
                 vertices[index++] = -2f                  // y1
                 vertices[index++] = -gridSize * gridStep // z1
@@ -464,14 +499,14 @@ class SimpleFallSimulation3D(
                 vertices[index++] = gridSize * gridStep  // z2
             }
 
-            // Vertex array için ByteBuffer oluştur
+            // Vertex dizisi için buffer oluştur
             val vertexBuffer = ByteBuffer.allocateDirect(vertices.size * 4)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer()
             vertexBuffer.put(vertices)
             vertexBuffer.position(0)
 
-            // Vertex array çiz
+            // Vertex dizisini çiz
             gl.glEnableClientState(GL10.GL_VERTEX_ARRAY)
             gl.glVertexPointer(3, GL10.GL_FLOAT, 0, vertexBuffer)
             gl.glDrawArrays(GL10.GL_LINES, 0, vertexCount)

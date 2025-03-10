@@ -34,13 +34,6 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_fall_3d_simulation)
 
-        // Toolbar'ı ayarla
-        supportActionBar?.apply {
-            title = "3D Düşüş Simülasyonu"
-            setDisplayHomeAsUpEnabled(true)
-            setDisplayShowHomeEnabled(true)
-        }
-
         // UI elemanlarını bağla
         simulationContainer = findViewById(R.id.simulationContainer)
         btnPlayPause = findViewById(R.id.btnPlayPause)
@@ -65,34 +58,35 @@ class Fall3DSimulationActivity : AppCompatActivity() {
             return
         }
 
-        // Anomalileri tespit et
-        val anomalies = AnomalyDetector.detectAnomalies(sensorDataList)
+        // TÜM KAYDI SİMÜLE ETMEK İÇİN DEĞİŞTİRİLDİ
+        tvSimulationInfo.text = "Tam Kayıt Simülasyonu: ${sensorDataList.size} veri noktası, " +
+                "${formatDuration(sensorDataList.last().timestamp - sensorDataList.first().timestamp)} süreli kayıt"
 
-        // Serbest düşüş anomalilerini filtrele
-        val freeFallAnomalies = anomalies.filter {
-            it.type == AccelerationAnomaly.AnomalyType.FREE_FALL
-        }
+        // Tüm veriler için simulasyon oluştur
+        val simulationReport = FreeFallAnalysis.FreeFallReport(
+            startTime = sensorDataList.first().timestamp,
+            endTime = sensorDataList.last().timestamp,
+            duration = sensorDataList.last().timestamp - sensorDataList.first().timestamp,
+            estimatedHeight = 0f,
+            quality = 100
+        )
 
-        if (freeFallAnomalies.isEmpty()) {
-            tvSimulationInfo.text = "Bu kayıtta serbest düşüş tespit edilemedi."
-            return
-        }
-
-        // İlk serbest düşüş için detaylı analiz yap
-        val freeFallReport = FreeFallAnalysis.analyzeFreeFall(freeFallAnomalies.first(), sensorDataList)
-
-        // Simülasyon bilgilerini göster
-        val fallStartTime = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
-            .format(Date(freeFallReport.startTime))
-        tvSimulationInfo.text = "Serbest Düşüş Simülasyonu: Süre: ${freeFallReport.duration}ms, " +
-                "Tahmini Yükseklik: ${"%.2f".format(freeFallReport.estimatedHeight)}m, " +
-                "Başlangıç: $fallStartTime"
-
-        // 3D simülasyonu başlat
-        initializeSimulation(freeFallReport)
+        // 3D simülasyonu başlat - TÜM VERİLERLE
+        initializeSimulation(simulationReport)
 
         // UI kontrollerini ayarla
         setupUIControls()
+    }
+    private fun formatDuration(millis: Long): String {
+        val seconds = (millis / 1000) % 60
+        val minutes = (millis / (1000 * 60)) % 60
+        val hours = (millis / (1000 * 60 * 60))
+
+        return when {
+            hours > 0 -> String.format("%d saat %d dakika %d saniye", hours, minutes, seconds)
+            minutes > 0 -> String.format("%d dakika %d saniye", minutes, seconds)
+            else -> String.format("%d saniye", seconds)
+        }
     }
 
     private fun initializeSimulation(freeFallReport: FreeFallAnalysis.FreeFallReport) {
