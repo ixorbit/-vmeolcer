@@ -237,23 +237,48 @@ class DataAnalyticsActivity : AppCompatActivity() {
             }
 
             file.bufferedReader().useLines { lines ->
+                // Başlık satırını atla
+                var isFirstLine = true
+
                 lines.forEach { line ->
+                    if (isFirstLine) {
+                        isFirstLine = false
+                        return@forEach
+                    }
+
                     if (line.isNotBlank()) {
                         val parts = line.split(",")
-                        if (parts.size == 4) {
-                            try {
+                        try {
+                            // Tüm değerleri oku - en az 4 sütun olmalı
+                            if (parts.size >= 4) {
                                 val timestamp = parts[0].toLong()
                                 val x = parts[1].toFloat()
                                 val y = parts[2].toFloat()
                                 val z = parts[3].toFloat()
-                                sensorDataList.add(SensorData(timestamp, x, y, z))
-                            } catch (e: NumberFormatException) {
-                                Log.e("DataAnalyticsActivity", "Veri ayrıştırma hatası: $line", e)
+
+                                // Ek verileri varsa ekle
+                                val rotX = if (parts.size > 4) parts[4].toFloatOrNull() ?: 0f else 0f
+                                val rotY = if (parts.size > 5) parts[5].toFloatOrNull() ?: 0f else 0f
+                                val rotZ = if (parts.size > 6) parts[6].toFloatOrNull() ?: 0f else 0f
+                                val gyroX = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f
+                                val gyroY = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f
+                                val gyroZ = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f
+
+                                sensorDataList.add(SensorData(
+                                    timestamp, x, y, z,
+                                    rotX, rotY, rotZ,
+                                    gyroX, gyroY, gyroZ
+                                ))
                             }
+                        } catch (e: NumberFormatException) {
+                            Log.e("DataAnalyticsActivity", "Veri ayrıştırma hatası: $line", e)
                         }
                     }
                 }
             }
+
+            Log.d("DataAnalyticsActivity", "Okunan sensör veri sayısı: ${sensorDataList.size}")
+
         } catch (e: IOException) {
             Log.e("DataAnalyticsActivity", "Dosya okuma hatası: $fileName", e)
             Toast.makeText(this, "Dosya okuma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
