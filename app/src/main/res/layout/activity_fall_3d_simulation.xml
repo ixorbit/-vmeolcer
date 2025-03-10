@@ -27,7 +27,7 @@
         android:layout_marginStart="16dp"
         android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"
-        android:text="Düşüş simülasyonu yükleniyor..."
+        android:text="Simülasyon yükleniyor..."
         android:textAlignment="center"
         android:textColor="#AAAAAA"
         android:textSize="14sp"
@@ -35,9 +35,9 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvSimulationTitle" />
 
-    <!-- 3D Simülasyon görünüm konteyneri -->
-    <FrameLayout
-        android:id="@+id/simulationContainer"
+    <!-- 3D SceneView (eski FrameLayout yerine) -->
+    <io.github.sceneview.SceneView
+        android:id="@+id/sceneView"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginStart="16dp"
@@ -50,7 +50,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvSimulationInfo" />
 
-    <!-- Kontrol paneli -->
+    <!-- Kontrol paneli (değişmedi) -->
     <androidx.cardview.widget.CardView
         android:id="@+id/controlPanel"
         android:layout_width="0dp"
@@ -65,6 +65,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
+        <!-- Kontrol paneli içeriği (değişmedi) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -122,7 +123,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Düşüş İlerleme: 0%"
+                android:text="İlerleme: 0%"
                 android:textAlignment="center"
                 android:textColor="#AAAAAA"
                 android:textSize="12sp" />

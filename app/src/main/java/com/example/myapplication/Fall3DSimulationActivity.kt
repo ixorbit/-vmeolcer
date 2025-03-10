@@ -1,46 +1,57 @@
 package com.example.myapplication
 
 import android.os.Bundle
-import android.util.Log
-import android.view.View
 import android.widget.Button
-import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.File
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import dev.romainguy.kotlin.math.Float3
+import com.google.android.filament.Engine
+import com.google.android.filament.MaterialInstance
+import com.google.android.filament.RenderableManager
+import com.google.android.filament.TransformManager
+import com.google.android.filament.gltfio.AssetLoader
+import android.os.Handler
+import android.os.Looper
+import io.github.sceneview.SceneView
+import io.github.sceneview.math.Position
+import io.github.sceneview.math.Rotation
+import io.github.sceneview.math.Direction
+import io.github.sceneview.node.Node
+import io.github.sceneview.light.DirectionalLight
+import io.github.sceneview.material.MaterialFactory
+import io.github.sceneview.model.ModelFactory
+import com.google.android.filament.Color
 
 class Fall3DSimulationActivity : AppCompatActivity() {
 
-    private lateinit var simulationContainer: FrameLayout
+    private lateinit var sceneView: SceneView
+    private lateinit var sensorDataList: List<SensorData>
     private lateinit var btnPlayPause: Button
     private lateinit var btnReset: Button
     private lateinit var seekBarSimulation: SeekBar
     private lateinit var tvSimulationProgress: TextView
     private lateinit var tvSimulationInfo: TextView
 
-    private lateinit var sensorDataList: List<SensorData>
-    private lateinit var simulation3D: SimpleFallSimulation3D  // Basit 3D simülasyon sınıfı kullanılıyor
-
-    private var isSimulationPlaying = false
-    private var isSimulationPrepared = false
+    private var isPlaying = false
+    private var currentFrameIndex = 0
+    private var animationHandler = Handler(Looper.getMainLooper())
+    private var phoneNode: Node? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_fall_3d_simulation)
 
         // UI elemanlarını bağla
-        simulationContainer = findViewById(R.id.simulationContainer)
         btnPlayPause = findViewById(R.id.btnPlayPause)
         btnReset = findViewById(R.id.btnReset)
         seekBarSimulation = findViewById(R.id.seekBarSimulation)
         tvSimulationProgress = findViewById(R.id.tvSimulationProgress)
         tvSimulationInfo = findViewById(R.id.tvSimulationInfo)
+
+        // SceneView'i bul (XML'de eklememiz gerekecek)
+        sceneView = findViewById(R.id.sceneView)
 
         // Intent'ten dosya adını al
         val fileName = intent.getStringExtra("FILE_NAME") ?: ""
@@ -58,212 +69,164 @@ class Fall3DSimulationActivity : AppCompatActivity() {
             return
         }
 
-        // TÜM KAYDI SİMÜLE ETMEK İÇİN DEĞİŞTİRİLDİ
-        tvSimulationInfo.text = "Tam Kayıt Simülasyonu: ${sensorDataList.size} veri noktası, " +
-                "${formatDuration(sensorDataList.last().timestamp - sensorDataList.first().timestamp)} süreli kayıt"
+        // Simülasyon bilgilerini göster
+        tvSimulationInfo.text = "Sensör Verisi Simülasyonu: ${sensorDataList.size} veri noktası"
 
-        // Tüm veriler için simulasyon oluştur
-        val simulationReport = FreeFallAnalysis.FreeFallReport(
-            startTime = sensorDataList.first().timestamp,
-            endTime = sensorDataList.last().timestamp,
-            duration = sensorDataList.last().timestamp - sensorDataList.first().timestamp,
-            estimatedHeight = 0f,
-            quality = 100
-        )
-
-        // 3D simülasyonu başlat - TÜM VERİLERLE
-        initializeSimulation(simulationReport)
+        // Scene'i hazırla ve telefon modelini ekle
+        setupScene()
 
         // UI kontrollerini ayarla
         setupUIControls()
     }
-    private fun formatDuration(millis: Long): String {
-        val seconds = (millis / 1000) % 60
-        val minutes = (millis / (1000 * 60)) % 60
-        val hours = (millis / (1000 * 60 * 60))
 
-        return when {
-            hours > 0 -> String.format("%d saat %d dakika %d saniye", hours, minutes, seconds)
-            minutes > 0 -> String.format("%d dakika %d saniye", minutes, seconds)
-            else -> String.format("%d saniye", seconds)
+    private fun setupScene() {
+        // Kamera ayarları
+        sceneView.camera.position = Position(0f, 0f, 4f)
+        sceneView.camera.lookAt(Position(0f, 0f, 0f))
+
+        // Işık ekle
+        val mainLight = DirectionalLight(sceneView.engine).apply {
+            color = Color(1.0f, 1.0f, 1.0f)
+            intensity = 60_000f
+            direction = Direction(0.0f, -1.0f, 0.0f)
         }
-    }
+        sceneView.scene.addChild(mainLight)
 
-    private fun initializeSimulation(freeFallReport: FreeFallAnalysis.FreeFallReport) {
-        // SimpleFallSimulation3D sınıfını kullan
-        simulation3D = SimpleFallSimulation3D(this, sensorDataList, freeFallReport)
-
-        // İlerleme güncellemeleri için listener
-        simulation3D.setOnProgressUpdateListener { progress ->
-            runOnUiThread {
-                seekBarSimulation.progress = progress
-                tvSimulationProgress.text = "Düşüş İlerleme: $progress%"
-            }
-        }
-
-        // Simülasyon hazırlık bildirimi
-        simulation3D.setOnSimulationPreparedListener {
-            runOnUiThread {
-                isSimulationPrepared = true
-                btnPlayPause.isEnabled = true
-                btnReset.isEnabled = true
-                seekBarSimulation.isEnabled = true
-                Toast.makeText(this, "Simülasyon hazır, oynatmak için 'Oynat' butonuna basın", Toast.LENGTH_SHORT).show()
-
-                // Animasyonu otomatik başlat (yorum satırını kaldırarak aktifleştirebilirsiniz)
-                // startSimulation()
-            }
+        // Zemin düzlemi ekle
+        val material = MaterialFactory.makeTransparentWithColor(
+            sceneView.engine,
+            Color(0.5f, 0.5f, 0.5f, 0.5f)
+        )
+        val plane = ModelFactory.makePlane(sceneView.engine, material, 10f, 10f)
+        Node().apply {
+            setModel(plane)
+            position = Position(0f, -2f, 0f)
+            rotation = Rotation(90f, 0f, 0f)
+            sceneView.scene.addChild(this)
         }
 
-        // Simülasyonu başlat
-        simulation3D.startSimulation(simulationContainer)
-    }
+        // Telefon modelini ekle (basit bir kutu)
+        val phoneMaterial = MaterialFactory.makeOpaqueWithColor(
+            sceneView.engine,
+            Color(0.1f, 0.1f, 0.8f)
+        )
+        val phoneModel = ModelFactory.makeBox(
+            sceneView.engine,
+            phoneMaterial,
+            0.7f, 1.4f, 0.1f
+        )
 
-    private fun startSimulation() {
-        if (!isSimulationPrepared) return
-
-        // Durdur butonunu göster
-        btnPlayPause.text = "Durdur"
-        isSimulationPlaying = true
-
-        // Animasyonu başlat
-        simulation3D.reset() // Önce sıfırla
-        simulation3D.play()  // Sonra oynat
+        phoneNode = Node().apply {
+            setModel(phoneModel)
+            position = Position(0f, 0f, 0f)
+            sceneView.scene.addChild(this)
+        }
     }
 
     private fun setupUIControls() {
-        // Başlangıçta kontrolleri devre dışı bırak
-        btnPlayPause.isEnabled = false
-        btnReset.isEnabled = false
-        seekBarSimulation.isEnabled = false
-
-        // Oynat/Durdur butonu
+        // Butonlar
         btnPlayPause.setOnClickListener {
-            if (!isSimulationPrepared) return@setOnClickListener
-
-            if (isSimulationPlaying) {
-                // Durdur
-                simulation3D.pause()
+            if (isPlaying) {
+                pauseAnimation()
                 btnPlayPause.text = "Oynat"
-                isSimulationPlaying = false
             } else {
-                // Oynat
-                simulation3D.play()
+                startAnimation()
                 btnPlayPause.text = "Durdur"
-                isSimulationPlaying = true
             }
         }
 
-        // Sıfırla butonu
         btnReset.setOnClickListener {
-            if (!isSimulationPrepared) return@setOnClickListener
-
-            simulation3D.reset()
-            isSimulationPlaying = false
-            btnPlayPause.text = "Oynat"
-            seekBarSimulation.progress = 0
-            tvSimulationProgress.text = "Düşüş İlerleme: 0%"
+            resetAnimation()
         }
 
         // İlerleme çubuğu
+        seekBarSimulation.max = sensorDataList.size - 1
         seekBarSimulation.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && isSimulationPrepared) {
-                    simulation3D.seekTo(progress)
-                    tvSimulationProgress.text = "Düşüş İlerleme: $progress%"
+                if (fromUser) {
+                    currentFrameIndex = progress
+                    updatePhone(sensorDataList[progress])
+                    tvSimulationProgress.text = "İlerleme: ${progress * 100 / (sensorDataList.size - 1)}%"
                 }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (isSimulationPlaying) {
-                    simulation3D.pause()
-                    isSimulationPlaying = false
-                    btnPlayPause.text = "Oynat"
-                }
+                pauseAnimation()
+                btnPlayPause.text = "Oynat"
             }
 
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                // Kullanıcı kaydırma çubuğunu bıraktığında bir şey yapma
-            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
     }
 
-    private fun readSensorDataFromFile(fileName: String): List<SensorData> {
-        val sensorDataList = mutableListOf<SensorData>()
-        val file = File(getExternalFilesDir(null), fileName)
-
-        try {
-            if (!file.exists() || !file.canRead()) {
-                Log.e("Fall3DSimulationActivity", "Dosya bulunamadı veya okunamıyor: $fileName")
-                Toast.makeText(this, "Dosya bulunamadı: $fileName", Toast.LENGTH_SHORT).show()
-                return emptyList()
-            }
-
-            file.bufferedReader().useLines { lines ->
-                // Başlık satırını atla
-                var isFirstLine = true
-
-                lines.forEach { line ->
-                    if (isFirstLine) {
-                        isFirstLine = false
-                        return@forEach
-                    }
-
-                    if (line.isNotBlank()) {
-                        val parts = line.split(",")
-                        try {
-                            // Tüm değerleri oku
-                            if (parts.size >= 4) {
-                                val timestamp = parts[0].toLong()
-                                val x = parts[1].toFloat()
-                                val y = parts[2].toFloat()
-                                val z = parts[3].toFloat()
-
-                                // Rotasyon ve gyroscope verilerini al (varsa)
-                                val rotX = if (parts.size > 4) parts[4].toFloatOrNull() ?: 0f else 0f
-                                val rotY = if (parts.size > 5) parts[5].toFloatOrNull() ?: 0f else 0f
-                                val rotZ = if (parts.size > 6) parts[6].toFloatOrNull() ?: 0f else 0f
-                                val gyroX = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f
-                                val gyroY = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f
-                                val gyroZ = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f
-
-                                sensorDataList.add(SensorData(
-                                    timestamp, x, y, z,
-                                    rotX, rotY, rotZ,
-                                    gyroX, gyroY, gyroZ
-                                ))
-                            }
-                        } catch (e: NumberFormatException) {
-                            Log.e("Fall3DSimulationActivity", "Veri ayrıştırma hatası: $line", e)
-                        }
-                    }
-                }
-            }
-        } catch (e: IOException) {
-            Log.e("Fall3DSimulationActivity", "Dosya okuma hatası: $fileName", e)
-            Toast.makeText(this, "Dosya okuma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
+    private fun startAnimation() {
+        if (currentFrameIndex >= sensorDataList.size - 1) {
+            currentFrameIndex = 0
         }
 
-        return sensorDataList
+        isPlaying = true
+        animateNextFrame()
     }
 
-    // Simülasyonu durdur ve temizle
+    private fun pauseAnimation() {
+        isPlaying = false
+        animationHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun resetAnimation() {
+        pauseAnimation()
+        currentFrameIndex = 0
+        if (sensorDataList.isNotEmpty()) {
+            updatePhone(sensorDataList[0])
+        }
+        seekBarSimulation.progress = 0
+        tvSimulationProgress.text = "İlerleme: 0%"
+        btnPlayPause.text = "Oynat"
+    }
+
+    private fun animateNextFrame() {
+        if (!isPlaying || currentFrameIndex >= sensorDataList.size - 1) {
+            isPlaying = false
+            btnPlayPause.text = "Oynat"
+            return
+        }
+
+        // Mevcut kareyi göster
+        updatePhone(sensorDataList[currentFrameIndex])
+
+        // İlerlemeyi güncelle
+        val progress = currentFrameIndex * 100 / (sensorDataList.size - 1)
+        tvSimulationProgress.text = "İlerleme: $progress%"
+        seekBarSimulation.progress = currentFrameIndex
+
+        // Sonraki kareye geç
+        currentFrameIndex++
+
+        // 100ms (10fps) sonra bir sonraki kareyi göster
+        animationHandler.postDelayed({ animateNextFrame() }, 100)
+    }
+
+    private fun updatePhone(data: SensorData) {
+        phoneNode?.let { phone ->
+            // İvme değerlerini doğrudan pozisyon olarak kullan (daha görünür olması için ölçeklendir)
+            val posX = data.x * 0.2f
+            val posY = data.y * 0.2f
+            val posZ = (data.z - 9.81f) * 0.2f  // Yerçekimi düzeltmesi
+
+            // Rotasyon değerlerini kullan
+            val rotX = data.rotX * 57.3f  // Radyan -> Derece
+            val rotY = data.rotY * 57.3f
+            val rotZ = data.rotZ * 57.3f
+
+            // Pozisyon ve rotasyonu uygula (animasyonlu)
+            phone.position = Position(posX, posY, posZ)
+            phone.rotation = Rotation(rotX, rotY, rotZ)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        if (::simulation3D.isInitialized) {
-            simulation3D.cleanup()
-        }
-    }
-
-    // Geri düğmesi için destek
-    override fun onSupportNavigateUp(): Boolean {
-        onBackPressed()
-        return true
-    }
-
-    // Özel animasyonlu geri dönüş
-    override fun onBackPressed() {
-        super.onBackPressed()
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        pauseAnimation()
+        sceneView.destroy()
     }
 }

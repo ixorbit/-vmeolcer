@@ -71,45 +71,32 @@ class SimpleFallSimulation3D(
 
             if (sensorDataList.isEmpty()) {
                 Log.e("SimpleFallSimulation3D", "Sensör verisi boş!")
-                // Boş veri durumunda bile bir şeyler göster
                 keyframes.add(FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, System.currentTimeMillis()))
                 return
             }
 
-            var vx = 0f
-            var vy = 0f
-            var vz = 0f
-            var x = 0f
-            var y = 0f
-            var z = 0f
-
-            // İlk zaman damgasını referans al
-            var lastTime = sensorDataList.firstOrNull()?.timestamp ?: 0L
             keyframes.clear()
 
-            // Tüm veriler için keyframe oluştur
-            for (data in sensorDataList) {
-                // Zaman farkını hesapla
-                val dt = (data.timestamp - lastTime) / 1000f
-                if (dt <= 0) continue // Aynı zamana ait veriler atlanır
-                lastTime = data.timestamp
+            // ---- YENİ YAKLAŞIM: DOĞRUDAN SENSÖR VERİLERİNİ KULLAN ----
+            // İvme verilerini doğrudan göster, entegrasyon yapmadan
 
-                // Hız değişimleri (ivme × zaman) - ÖNEMLİ: daha belirgin görmek için katsayı
-                vx += data.x * dt * 0.2f  // Katsayıyı artırdım
-                vy += data.y * dt * 0.2f  // Katsayıyı artırdım
-                vz += (data.z - 9.81f) * dt * 0.2f  // Katsayıyı artırdım
+            // Bazı verileri atla (performans ve görsellik için)
+            val skipFactor = if (sensorDataList.size > 1000) 10 else if (sensorDataList.size > 500) 5 else 2
 
-                // Pozisyon değişimleri
-                x += vx * dt
-                y += vy * dt
-                z += vz * dt
+            // Her bir veri noktası için keyframe oluştur
+            Log.d("SimpleFallSimulation3D", "Skip factor: $skipFactor, işlenecek veri: ${sensorDataList.size / skipFactor}")
 
-                // Keyframe oluştur - ÖNEMLİ: Daha büyük ölçek
+            sensorDataList.forEachIndexed { index, data ->
+                // Her skipFactor veriyi atla
+                if (index % skipFactor != 0 && index > 0) return@forEachIndexed
+
+                // İVME VERİLERİNİ DOĞRUDAN KONUM OLARAK KULLAN (çok daha belirgin görmek için)
+                // Bu yaklaşım fiziksel olarak doğru değil ama görsel olarak daha iyi
                 keyframes.add(FallKeyframe(
-                    x = x * 0.1f,  // Daha büyük ölçek
-                    y = y * 0.1f,  // Daha büyük ölçek
-                    z = z * 0.1f,  // Daha büyük ölçek
-                    rotX = data.rotX * 57.3f,  // Radyan -> Derece
+                    x = data.x * 0.3f,       // İvme X = Konum X (ölçek 0.3)
+                    y = data.y * 0.3f,       // İvme Y = Konum Y (ölçek 0.3)
+                    z = (data.z - 9.81f) * 0.3f,  // Yerçekimi çıkarıldı
+                    rotX = data.rotX * 57.3f,     // Radyan -> Derece
                     rotY = data.rotY * 57.3f,
                     rotZ = data.rotZ * 57.3f,
                     timestamp = data.timestamp
@@ -119,15 +106,19 @@ class SimpleFallSimulation3D(
             Log.d("SimpleFallSimulation3D", "Toplam ${keyframes.size} keyframe oluşturuldu")
 
             if (keyframes.isEmpty()) {
-                // Eğer hala boşsa, bir tane ekle
                 keyframes.add(FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, System.currentTimeMillis()))
             }
 
-        } catch (e: Exception) {
-            Log.e("SimpleFallSimulation3D", "Keyframe oluşturma hatası: ${e.message}")
-            e.printStackTrace()
+            // Daha iyi log, ilk ve son keyframe bilgilerini göster
+            if (keyframes.size > 1) {
+                val first = keyframes.first()
+                val last = keyframes.last()
+                Log.d("SimpleFallSimulation3D", "İlk keyframe: (${first.x}, ${first.y}, ${first.z})")
+                Log.d("SimpleFallSimulation3D", "Son keyframe: (${last.x}, ${last.y}, ${last.z})")
+            }
 
-            // Hata durumunda bile bir şeyler göstermek için
+        } catch (e: Exception) {
+            Log.e("SimpleFallSimulation3D", "Keyframe oluşturma hatası", e)
             keyframes.clear()
             keyframes.add(FallKeyframe(0f, 0f, 0f, 0f, 0f, 0f, System.currentTimeMillis()))
         }
@@ -279,22 +270,22 @@ class SimpleFallSimulation3D(
         // Telefon modeli (daha gerçekçi şekil)
         private val vertices = floatArrayOf(
             // Ön
-            -0.4f, -0.8f, 0.05f,
-            0.4f, -0.8f, 0.05f,
-            0.4f, 0.8f, 0.05f,
-            -0.4f, 0.8f, 0.05f,
+            -0.6f, -1.2f, 0.1f,
+            0.6f, -1.2f, 0.1f,
+            0.6f, 1.2f, 0.1f,
+            -0.6f, 1.2f, 0.1f,
 
             // Arka
-            -0.4f, -0.8f, -0.05f,
-            0.4f, -0.8f, -0.05f,
-            0.4f, 0.8f, -0.05f,
-            -0.4f, 0.8f, -0.05f,
+            -0.6f, -1.2f, -0.1f,
+            0.6f, -1.2f, -0.1f,
+            0.6f, 1.2f, -0.1f,
+            -0.6f, 1.2f, -0.1f,
 
             // Ekran (biraz çıkıntılı)
-            -0.35f, -0.75f, 0.051f,
-            0.35f, -0.75f, 0.051f,
-            0.35f, 0.75f, 0.051f,
-            -0.35f, 0.75f, 0.051f,
+            -0.55f, -1.15f, 0.101f,
+            0.55f, -1.15f, 0.101f,
+            0.55f, 1.15f, 0.101f,
+            -0.55f, 1.15f, 0.101f,
         )
 
         // Yüz indeksleri
@@ -402,46 +393,31 @@ class SimpleFallSimulation3D(
             gl.glClear(GL10.GL_COLOR_BUFFER_BIT or GL10.GL_DEPTH_BUFFER_BIT)
             gl.glLoadIdentity()
 
-            // Kamera pozisyonu (biraz uzaktan ve yüksekten bak)
-            GLU.gluLookAt(gl, 0f, 2f, 5f, 0f, 0f, 0f, 0f, 1f, 0f)
+            // Kamerayı daha uzağa yerleştir - modeli daha iyi görmek için
+            GLU.gluLookAt(gl, 0f, 0f, 10f, 0f, 0f, 0f, 0f, 1f, 0f)
 
-            // Işıklandırma etkinleştir
-            gl.glEnable(GL10.GL_LIGHTING)
-            gl.glEnable(GL10.GL_LIGHT0)
-
-            // Ambient ve diffuse ışık renkleri
-            val ambientLight = floatArrayOf(0.3f, 0.3f, 0.4f, 1f)
-            val diffuseLight = floatArrayOf(0.7f, 0.7f, 0.7f, 1f)
-            val lightPosition = floatArrayOf(5f, 5f, 5f, 1f)
-
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_AMBIENT, ambientLight, 0)
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_DIFFUSE, diffuseLight, 0)
-            gl.glLightfv(GL10.GL_LIGHT0, GL10.GL_POSITION, lightPosition, 0)
-
-            // Yer gösterimi (grid)
+            // Zemin çizgilerini göster
             drawGrid(gl)
 
-            // Telefon pozisyonu ve rotasyonu
+            // Debug bilgisi
+            Log.d("FallRenderer", "Model pozisyonu: x=${currentKeyframe.x}, y=${currentKeyframe.y}, z=${currentKeyframe.z}")
+
+            // Telefon modeli
             gl.glPushMatrix()
+
+            // ÖNEMLİ: Daha büyük ölçekte hareket ettir
             gl.glTranslatef(
-                currentKeyframe.x,
-                currentKeyframe.y,
-                currentKeyframe.z
+                currentKeyframe.x * 5.0f,  // 5 kat büyüt
+                currentKeyframe.y * 5.0f,  // 5 kat büyüt
+                currentKeyframe.z * 5.0f   // 5 kat büyüt
             )
 
-            // Rotasyon - rölatif açıları uygula
-            gl.glRotatef(currentKeyframe.rotX, 1f, 0f, 0f)
-            gl.glRotatef(currentKeyframe.rotY, 0f, 1f, 0f)
-            gl.glRotatef(currentKeyframe.rotZ, 0f, 0f, 1f)
+            // Rotasyonu abartılı hale getir
+            gl.glRotatef(currentKeyframe.rotX * 2.0f, 1f, 0f, 0f)
+            gl.glRotatef(currentKeyframe.rotY * 2.0f, 0f, 1f, 0f)
+            gl.glRotatef(currentKeyframe.rotZ * 2.0f, 0f, 0f, 1f)
 
-            // Malzeme özellikleri
-            val materialAmbient = floatArrayOf(0.3f, 0.3f, 0.3f, 1f)
-            val materialDiffuse = floatArrayOf(0.7f, 0.7f, 0.7f, 1f)
-
-            gl.glMaterialfv(GL10.GL_FRONT, GL10.GL_AMBIENT, materialAmbient, 0)
-            gl.glMaterialfv(GL10.GL_FRONT, GL10.GL_DIFFUSE, materialDiffuse, 0)
-
-            // Vertex ve renk arraylerini etkinleştir
+            // Telefon modelini çiz
             gl.glEnableClientState(GL10.GL_VERTEX_ARRAY)
             gl.glEnableClientState(GL10.GL_COLOR_ARRAY)
 
@@ -453,8 +429,6 @@ class SimpleFallSimulation3D(
             gl.glDisableClientState(GL10.GL_VERTEX_ARRAY)
 
             gl.glPopMatrix()
-
-            gl.glDisable(GL10.GL_LIGHTING)
         }
 
         /**
