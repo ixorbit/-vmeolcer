@@ -16,6 +16,8 @@ protoliteWellKnownTypes = "18.0.0"
 mpandroidchart = "v3.1.0"
 kotlinxParcelizeRuntime = "1.5.0"
 sceneview = "2.2.1"
+filament = "2.2.1"
+filamentAndroid = "1.57.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,6 +35,8 @@ protolite-well-known-types = { group = "com.google.firebase", name = "protolite-
 mpandroidchart = { group = "com.github.PhilJay", name = "MPAndroidChart", version.ref = "mpandroidchart" }
 kotlinx-parcelize-runtime = { group = "org.jetbrains.kotlinx", name = "kotlinx-parcelize-runtime", version.ref = "kotlinxParcelizeRuntime" }
 sceneview = { group = "io.github.sceneview", name = "sceneview", version.ref = "sceneview" }
+filament = { group = "io.github.sceneview", name = "filament", version.ref = "filament" }
+filament-android = { group = "com.google.android.filament", name = "filament-android", version.ref = "filamentAndroid" }
 
 
 [plugins]

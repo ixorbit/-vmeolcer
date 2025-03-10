@@ -1,30 +1,22 @@
 package com.example.myapplication
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import dev.romainguy.kotlin.math.Float3
-import com.google.android.filament.Engine
-import com.google.android.filament.MaterialInstance
-import com.google.android.filament.RenderableManager
-import com.google.android.filament.TransformManager
-import com.google.android.filament.gltfio.AssetLoader
-import android.os.Handler
-import android.os.Looper
 import io.github.sceneview.SceneView
+import io.github.sceneview.node.Node
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
-import io.github.sceneview.math.Direction
-import io.github.sceneview.node.Node
-import io.github.sceneview.light.DirectionalLight
-import io.github.sceneview.material.MaterialFactory
-import io.github.sceneview.model.ModelFactory
-import com.google.android.filament.Color
+import java.io.File
+import java.io.IOException
 
-class Fall3DSimulationActivity : AppCompatActivity() {
+class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
 
     private lateinit var sceneView: SceneView
     private lateinit var sensorDataList: List<SensorData>
@@ -50,7 +42,7 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         tvSimulationProgress = findViewById(R.id.tvSimulationProgress)
         tvSimulationInfo = findViewById(R.id.tvSimulationInfo)
 
-        // SceneView'i bul (XML'de eklememiz gerekecek)
+        // SceneView'i bul
         sceneView = findViewById(R.id.sceneView)
 
         // Intent'ten dosya adını al
@@ -72,7 +64,7 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         // Simülasyon bilgilerini göster
         tvSimulationInfo.text = "Sensör Verisi Simülasyonu: ${sensorDataList.size} veri noktası"
 
-        // Scene'i hazırla ve telefon modelini ekle
+        // SceneView'i hazırla
         setupScene()
 
         // UI kontrollerini ayarla
@@ -80,46 +72,30 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     }
 
     private fun setupScene() {
-        // Kamera ayarları
-        sceneView.camera.position = Position(0f, 0f, 4f)
-        sceneView.camera.lookAt(Position(0f, 0f, 0f))
+        try {
+            // Doğrudan BoxNode kullanımı yerine Node oluştur
+            phoneNode = createPhoneModel()
 
-        // Işık ekle
-        val mainLight = DirectionalLight(sceneView.engine).apply {
-            color = Color(1.0f, 1.0f, 1.0f)
-            intensity = 60_000f
-            direction = Direction(0.0f, -1.0f, 0.0f)
+            // 3D sahneyi oluşturmak için Android OpenGL kullanacağız
+
+        } catch (e: Exception) {
+            Log.e("Fall3DSimulationActivity", "Scene oluşturma hatası: ${e.message}")
+            Toast.makeText(this, "3D görünüm oluşturulamadı: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-        sceneView.scene.addChild(mainLight)
+    }
 
-        // Zemin düzlemi ekle
-        val material = MaterialFactory.makeTransparentWithColor(
-            sceneView.engine,
-            Color(0.5f, 0.5f, 0.5f, 0.5f)
-        )
-        val plane = ModelFactory.makePlane(sceneView.engine, material, 10f, 10f)
-        Node().apply {
-            setModel(plane)
-            position = Position(0f, -2f, 0f)
-            rotation = Rotation(90f, 0f, 0f)
-            sceneView.scene.addChild(this)
-        }
-
-        // Telefon modelini ekle (basit bir kutu)
-        val phoneMaterial = MaterialFactory.makeOpaqueWithColor(
-            sceneView.engine,
-            Color(0.1f, 0.1f, 0.8f)
-        )
-        val phoneModel = ModelFactory.makeBox(
-            sceneView.engine,
-            phoneMaterial,
-            0.7f, 1.4f, 0.1f
-        )
-
-        phoneNode = Node().apply {
-            setModel(phoneModel)
+    private fun createPhoneModel(): Node {
+        // Android sürümünüze uygun şekilde Node oluştur
+        return Node(engine = sceneView.engine).apply {
+            // Başlangıç pozisyonu
             position = Position(0f, 0f, 0f)
-            sceneView.scene.addChild(this)
+
+            // SceneView API özelliklerine göre boyutlandırma
+            // Doğrudan ölçek ayarlamak için:
+            modelScale = 0.5f
+
+            // Alternatif olarak telefon modelini yükleyebiliriz (eğer SceneView modelFactory destekliyorsa)
+            // loadModelGlb(context = this@Fall3DSimulationActivity, glbFileLocation = "models/phone.glb")
         }
     }
 
@@ -207,21 +183,88 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     }
 
     private fun updatePhone(data: SensorData) {
-        phoneNode?.let { phone ->
-            // İvme değerlerini doğrudan pozisyon olarak kullan (daha görünür olması için ölçeklendir)
-            val posX = data.x * 0.2f
-            val posY = data.y * 0.2f
-            val posZ = (data.z - 9.81f) * 0.2f  // Yerçekimi düzeltmesi
+        try {
+            phoneNode?.let { phone ->
+                // İvme değerlerini doğrudan pozisyon olarak kullan (daha görünür olması için ölçeklendir)
+                val posX = data.x * 0.2f
+                val posY = data.y * 0.2f
+                val posZ = (data.z - 9.81f) * 0.2f  // Yerçekimi düzeltmesi
 
-            // Rotasyon değerlerini kullan
-            val rotX = data.rotX * 57.3f  // Radyan -> Derece
-            val rotY = data.rotY * 57.3f
-            val rotZ = data.rotZ * 57.3f
+                // Rotasyon değerlerini kullan
+                val rotX = data.rotX * 57.3f  // Radyan -> Derece
+                val rotY = data.rotY * 57.3f
+                val rotZ = data.rotZ * 57.3f
 
-            // Pozisyon ve rotasyonu uygula (animasyonlu)
-            phone.position = Position(posX, posY, posZ)
-            phone.rotation = Rotation(rotX, rotY, rotZ)
+                // Pozisyon ve rotasyonu uygula
+                phone.position = Position(posX, posY, posZ)
+                phone.rotation = Rotation(rotX, rotY, rotZ)
+            }
+        } catch (e: Exception) {
+            Log.e("Fall3DSimulationActivity", "Telefon güncelleme hatası: ${e.message}")
         }
+    }
+
+    // DataAnalyticsActivity'den kopyalanan dosya okuma fonksiyonu
+    private fun readSensorDataFromFile(fileName: String): List<SensorData> {
+        val sensorDataList = mutableListOf<SensorData>()
+        val file = File(getExternalFilesDir(null), fileName)
+
+        try {
+            if (!file.exists() || !file.canRead()) {
+                Log.e("Fall3DSimulationActivity", "Dosya bulunamadı veya okunamıyor: $fileName")
+                Toast.makeText(this, "Dosya bulunamadı: $fileName", Toast.LENGTH_SHORT).show()
+                return emptyList()
+            }
+
+            file.bufferedReader().useLines { lines ->
+                // Başlık satırını atla
+                var isFirstLine = true
+
+                lines.forEach { line ->
+                    if (isFirstLine) {
+                        isFirstLine = false
+                        return@forEach
+                    }
+
+                    if (line.isNotBlank()) {
+                        val parts = line.split(",")
+                        try {
+                            // Tüm değerleri oku - en az 4 sütun olmalı
+                            if (parts.size >= 4) {
+                                val timestamp = parts[0].toLong()
+                                val x = parts[1].toFloat()
+                                val y = parts[2].toFloat()
+                                val z = parts[3].toFloat()
+
+                                // Ek verileri varsa ekle
+                                val rotX = if (parts.size > 4) parts[4].toFloatOrNull() ?: 0f else 0f
+                                val rotY = if (parts.size > 5) parts[5].toFloatOrNull() ?: 0f else 0f
+                                val rotZ = if (parts.size > 6) parts[6].toFloatOrNull() ?: 0f else 0f
+                                val gyroX = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f
+                                val gyroY = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f
+                                val gyroZ = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f
+
+                                sensorDataList.add(SensorData(
+                                    timestamp, x, y, z,
+                                    rotX, rotY, rotZ,
+                                    gyroX, gyroY, gyroZ
+                                ))
+                            }
+                        } catch (e: NumberFormatException) {
+                            Log.e("Fall3DSimulationActivity", "Veri ayrıştırma hatası: $line", e)
+                        }
+                    }
+                }
+            }
+
+            Log.d("Fall3DSimulationActivity", "Okunan sensör veri sayısı: ${sensorDataList.size}")
+
+        } catch (e: IOException) {
+            Log.e("Fall3DSimulationActivity", "Dosya okuma hatası: $fileName", e)
+            Toast.makeText(this, "Dosya okuma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+
+        return sensorDataList
     }
 
     override fun onDestroy() {
