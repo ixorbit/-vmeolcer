@@ -25,6 +25,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.sqrt
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
@@ -39,14 +40,40 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isRunning = false
     private lateinit var dbHelper: DatabaseHelper
     private var fileName: String = ""
-    private var gyroscope: Sensor? = null  // lateinit kaldırıldı, ? işareti değişkeni nullable yaptı
+
+    // Sensörler
+    private var gyroscope: Sensor? = null
+    private var rotationVectorSensor: Sensor? = null
+    private var linearAccelSensor: Sensor? = null
+    private var gravitySensor: Sensor? = null
+
+    // Rotasyon değerleri
     private var rotationX = 0f
     private var rotationY = 0f
     private var rotationZ = 0f
+
+    // Gyroscope değerleri ve zamanı
     private var lastGyroX = 0f
     private var lastGyroY = 0f
     private var lastGyroZ = 0f
     private var lastGyroTimestamp = 0L
+
+    // Lineer ivme değerleri (yerçekimi olmadan)
+    private var linAccX = 0f
+    private var linAccY = 0f
+    private var linAccZ = 0f
+
+    // Yerçekimi değerleri
+    private var gravityX = 0f
+    private var gravityY = 0f
+    private var gravityZ = 0f
+
+    // Sensör veri filtresi için
+    private val ALPHA = 0.8f  // Filtre katsayısı (0-1 arası, 1'e yakın = daha fazla filtreleme)
+
+    // Rotasyon vektörü hesaplaması için matrısler
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
 
     // UI elements
     private lateinit var startButton: Button
@@ -86,8 +113,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         // Set up sensor manager
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+
+        // Tüm sensörleri tanımla
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        linearAccelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+        gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
 
         // Initialize database helper
         dbHelper = DatabaseHelper(this)
@@ -137,7 +169,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         styleGraph()
     }
 
-    // styleGraph fonksiyonunu güncelleyin - siyah arka plan için
     private fun styleGraph() {
         // Viewport settings
         graph.viewport.apply {
@@ -197,7 +228,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             if (!isRunning) {
                 isRunning = true
                 dbHelper.clearAllData()
-                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+
+                // Tüm sensörleri kaydet - daha yüksek örnekleme hızı (GAME)
+                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+                gyroscope?.let { sensor ->
+                    sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+                }
+                rotationVectorSensor?.let { sensor ->
+                    sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+                }
+                linearAccelSensor?.let { sensor ->
+                    sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+                }
+                gravitySensor?.let { sensor ->
+                    sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+                }
 
                 // Animate button and status changes
                 it.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).start()
@@ -267,7 +312,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             infoCard.animate().alpha(0f).setDuration(300)
                 .withEndAction { infoCard.visibility = View.GONE }.start()
         }
-
     }
 
     private fun resetGraph() {
@@ -284,7 +328,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         graph.viewport.setMaxX(20.0)
     }
 
-    // saveDataToFile fonksiyonunu güncelleyin, showDataButton'un aktif olduğunu göstermek için
     private fun saveDataToFile() {
         val timestamp = System.currentTimeMillis()
         fileName = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date(timestamp)) + ".txt"
@@ -297,13 +340,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             val sensorDataList = dbHelper.getAllSensorData()
             file.bufferedWriter().use { out ->
-                // Başlık satırını yaz
-                out.write("timestamp,accel_x,accel_y,accel_z,rotation_x,rotation_y,rotation_z,gyro_x,gyro_y,gyro_z\n")
+                // CSV Başlık satırını genişletilmiş sensör verileri için güncelle
+                out.write("timestamp,accel_x,accel_y,accel_z,rotation_x,rotation_y,rotation_z," +
+                        "gyro_x,gyro_y,gyro_z,linacc_x,linacc_y,linacc_z,grav_x,grav_y,grav_z\n")
 
                 sensorDataList.forEach { sensorData ->
+                    // Tüm sensör verilerini içeren geliştirilmiş satır
                     out.write("${sensorData.timestamp},${sensorData.x},${sensorData.y},${sensorData.z}," +
                             "${sensorData.rotX},${sensorData.rotY},${sensorData.rotZ}," +
-                            "${sensorData.gyroX},${sensorData.gyroY},${sensorData.gyroZ}\n")
+                            "${sensorData.gyroX},${sensorData.gyroY},${sensorData.gyroZ}," +
+                            "${sensorData.linAccX},${sensorData.linAccY},${sensorData.linAccZ}," +
+                            "${sensorData.gravX},${sensorData.gravY},${sensorData.gravZ}\n")
                 }
             }
 
@@ -354,56 +401,124 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (isRunning) {
-            when (event?.sensor?.type) {
+        if (isRunning && event != null) {
+            val currentTime = System.currentTimeMillis()
+
+            when (event.sensor?.type) {
                 Sensor.TYPE_ACCELEROMETER -> {
+                    // İvmeölçer verilerini al
                     val x = event.values[0]
                     val y = event.values[1]
                     val z = event.values[2]
-                    Log.d("SENSOR_DATA", "X: $x, Y: $y, Z: $z")
+
+                    // Grafiği güncelle
                     updateGraph(x, y, z)
 
-                    // Rotasyon verilerini de içerecek şekilde kaydet
+                    // Verileri kaydet (tüm sensör değerleriyle)
                     dbHelper.addSensorData(
-                        System.currentTimeMillis(),
+                        currentTime,
                         x, y, z,
                         rotationX, rotationY, rotationZ,
-                        lastGyroX, lastGyroY, lastGyroZ
+                        lastGyroX, lastGyroY, lastGyroZ,
+                        linAccX, linAccY, linAccZ,
+                        gravityX, gravityY, gravityZ
                     )
                 }
+
                 Sensor.TYPE_GYROSCOPE -> {
-                    val currentTime = System.currentTimeMillis()
+                    // Jiroskop verilerini al ve filtrele
+                    lastGyroX = ALPHA * lastGyroX + (1 - ALPHA) * event.values[0]
+                    lastGyroY = ALPHA * lastGyroY + (1 - ALPHA) * event.values[1]
+                    lastGyroZ = ALPHA * lastGyroZ + (1 - ALPHA) * event.values[2]
 
-                    // Gyroscope verilerini al
-                    lastGyroX = event.values[0]
-                    lastGyroY = event.values[1]
-                    lastGyroZ = event.values[2]
-
-                    // Eğer önceden zaman kaydedilmişse rotasyon hesapla
+                    // Rotasyon hesaplama (entegrasyon)
                     if (lastGyroTimestamp != 0L) {
                         // Zaman farkını saniye cinsinden hesapla
                         val dT = (currentTime - lastGyroTimestamp) / 1000f
 
                         // Açısal hızdan rotasyona çevir (basit entegrasyon)
-                        rotationX += lastGyroX * dT
-                        rotationY += lastGyroY * dT
-                        rotationZ += lastGyroZ * dT
+                        // Not: Bu rotasyon hesaplaması temel seviyededir. Rotation Vector sensörü
+                        // daha doğru rotasyon verileri sağlar.
+                        val gyroRotX = lastGyroX * dT
+                        val gyroRotY = lastGyroY * dT
+                        val gyroRotZ = lastGyroZ * dT
+
+                        // Eğer rotation vector sensörü yoksa, jiroskop entegrasyonu kullan
+                        if (rotationVectorSensor == null) {
+                            rotationX += gyroRotX
+                            rotationY += gyroRotY
+                            rotationZ += gyroRotZ
+                        }
                     }
 
                     lastGyroTimestamp = currentTime
+                }
+
+                Sensor.TYPE_ROTATION_VECTOR -> {
+                    // Rotasyon vektörü, cihazın yönelimini en doğru şekilde verir
+
+                    // Rotasyon matrisini hesapla
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+
+                    // Oryantasyon açılarını hesapla
+                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
+
+                    // Radyan -> Derece dönüşümü
+                    rotationX = Math.toDegrees(orientationAngles[1].toDouble()).toFloat() // Pitch
+                    rotationY = Math.toDegrees(orientationAngles[2].toDouble()).toFloat() // Roll
+                    rotationZ = Math.toDegrees(orientationAngles[0].toDouble()).toFloat() // Azimuth/Yaw
+                }
+
+                Sensor.TYPE_LINEAR_ACCELERATION -> {
+                    // Lineer ivme (yerçekimi etkisi olmadan) - filtrele
+                    linAccX = ALPHA * linAccX + (1 - ALPHA) * event.values[0]
+                    linAccY = ALPHA * linAccY + (1 - ALPHA) * event.values[1]
+                    linAccZ = ALPHA * linAccZ + (1 - ALPHA) * event.values[2]
+
+                    // Serbest düşüş tespiti için kontrol
+                    val magnitude = sqrt(
+                        linAccX * linAccX +
+                                linAccY * linAccY +
+                                linAccZ * linAccZ
+                    )
+
+                    if (magnitude < 0.5f) {
+                        // Düşük magnitude, muhtemel serbest düşüş
+                        Log.d("SENSOR", "Muhtemel serbest düşüş algılandı: $magnitude m/s²")
+                    }
+                }
+
+                Sensor.TYPE_GRAVITY -> {
+                    // Yerçekimi vektörü - filtrele
+                    gravityX = ALPHA * gravityX + (1 - ALPHA) * event.values[0]
+                    gravityY = ALPHA * gravityY + (1 - ALPHA) * event.values[1]
+                    gravityZ = ALPHA * gravityZ + (1 - ALPHA) * event.values[2]
                 }
             }
         }
     }
 
-
     override fun onResume() {
         super.onResume()
         if(isRunning) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-        }
-        gyroscope?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            // Tüm sensörleri kaydet
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+
+            gyroscope?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+
+            rotationVectorSensor?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+
+            linearAccelSensor?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+
+            gravitySensor?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
         }
     }
 

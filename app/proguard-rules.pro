@@ -11,7 +11,9 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
-
+# SceneView ve Filament kuralları
+-keep class io.github.sceneview.** { *; }
+-keep class com.google.android.filament.** { *; }
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.

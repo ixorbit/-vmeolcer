@@ -1,39 +1,48 @@
 package com.example.myapplication
 
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import io.github.sceneview.SceneView
-import io.github.sceneview.node.Node
-import io.github.sceneview.math.Position
-import io.github.sceneview.math.Rotation
 import java.io.File
 import java.io.IOException
+import java.util.Timer
+import java.util.TimerTask
 
-class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
+class Fall3DSimulationActivity : AppCompatActivity() {
 
-    private lateinit var sceneView: SceneView
+    private lateinit var glSurfaceView: GLSurfaceView
+    private lateinit var phoneRenderer: PhoneRenderer
     private lateinit var sensorDataList: List<SensorData>
     private lateinit var btnPlayPause: Button
     private lateinit var btnReset: Button
     private lateinit var seekBarSimulation: SeekBar
     private lateinit var tvSimulationProgress: TextView
     private lateinit var tvSimulationInfo: TextView
+    private lateinit var glContainer: FrameLayout
 
     private var isPlaying = false
     private var currentFrameIndex = 0
-    private var animationHandler = Handler(Looper.getMainLooper())
-    private var phoneNode: Node? = null
+    private var timer: Timer? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_fall_3d_simulation)
+
+        // Toolbar'ı ayarla
+        supportActionBar?.apply {
+            title = "3D Düşüş Simülasyonu"
+            setDisplayHomeAsUpEnabled(true)
+            setDisplayShowHomeEnabled(true)
+        }
 
         // UI elemanlarını bağla
         btnPlayPause = findViewById(R.id.btnPlayPause)
@@ -41,9 +50,7 @@ class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
         seekBarSimulation = findViewById(R.id.seekBarSimulation)
         tvSimulationProgress = findViewById(R.id.tvSimulationProgress)
         tvSimulationInfo = findViewById(R.id.tvSimulationInfo)
-
-        // SceneView'i bul
-        sceneView = findViewById(R.id.sceneView)
+        glContainer = findViewById(R.id.sceneContainer) // Layout'taki FrameLayout
 
         // Intent'ten dosya adını al
         val fileName = intent.getStringExtra("FILE_NAME") ?: ""
@@ -64,147 +71,132 @@ class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
         // Simülasyon bilgilerini göster
         tvSimulationInfo.text = "Sensör Verisi Simülasyonu: ${sensorDataList.size} veri noktası"
 
-        // SceneView'i hazırla
-        setupScene()
+        // OpenGL ES view oluştur ve ayarla
+        setupGLView()
 
         // UI kontrollerini ayarla
         setupUIControls()
     }
 
-    private fun setupScene() {
+    private fun setupGLView() {
         try {
-            // Doğrudan BoxNode kullanımı yerine Node oluştur
-            phoneNode = createPhoneModel()
+            // OpenGL ES Surface View oluştur
+            glSurfaceView = GLSurfaceView(this)
+            glSurfaceView.setEGLContextClientVersion(2) // OpenGL ES 2.0 kullan
 
-            // 3D sahneyi oluşturmak için Android OpenGL kullanacağız
+            // Renderer oluştur ve bağla
+            phoneRenderer = PhoneRenderer()
+            glSurfaceView.setRenderer(phoneRenderer)
 
+            // Rendermode'u RENDERMODE_WHEN_DIRTY olarak ayarla
+            // Bu, yalnızca requestRender() çağrıldığında çizim yapılacağı anlamına gelir
+            glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+
+            // GLSurfaceView'i container'a ekle
+            glContainer.removeAllViews() // Önceki view'ları temizle
+            glContainer.addView(glSurfaceView)
+
+            Log.d("Fall3DSimulationActivity", "OpenGL ES view başarıyla kuruldu")
         } catch (e: Exception) {
-            Log.e("Fall3DSimulationActivity", "Scene oluşturma hatası: ${e.message}")
-            Toast.makeText(this, "3D görünüm oluşturulamadı: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun createPhoneModel(): Node {
-        // Android sürümünüze uygun şekilde Node oluştur
-        return Node(engine = sceneView.engine).apply {
-            // Başlangıç pozisyonu
-            position = Position(0f, 0f, 0f)
-
-            // SceneView API özelliklerine göre boyutlandırma
-            // Doğrudan ölçek ayarlamak için:
-            modelScale = 0.5f
-
-            // Alternatif olarak telefon modelini yükleyebiliriz (eğer SceneView modelFactory destekliyorsa)
-            // loadModelGlb(context = this@Fall3DSimulationActivity, glbFileLocation = "models/phone.glb")
+            Log.e("Fall3DSimulationActivity", "OpenGL ES view oluşturma hatası: ${e.message}")
+            Toast.makeText(this, "3D görüntüleme başlatılamadı: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun setupUIControls() {
-        // Butonlar
+        // Play/Pause butonu
         btnPlayPause.setOnClickListener {
             if (isPlaying) {
-                pauseAnimation()
+                pauseSimulation()
                 btnPlayPause.text = "Oynat"
             } else {
-                startAnimation()
+                startSimulation()
                 btnPlayPause.text = "Durdur"
             }
         }
 
+        // Reset butonu
         btnReset.setOnClickListener {
-            resetAnimation()
+            resetSimulation()
         }
 
         // İlerleme çubuğu
         seekBarSimulation.max = sensorDataList.size - 1
         seekBarSimulation.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     currentFrameIndex = progress
-                    updatePhone(sensorDataList[progress])
-                    tvSimulationProgress.text = "İlerleme: ${progress * 100 / (sensorDataList.size - 1)}%"
+                    updateSimulation(progress)
                 }
             }
 
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                pauseAnimation()
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
+                pauseSimulation()
                 btnPlayPause.text = "Oynat"
             }
 
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
         })
     }
 
-    private fun startAnimation() {
-        if (currentFrameIndex >= sensorDataList.size - 1) {
-            currentFrameIndex = 0
-        }
-
+    private fun startSimulation() {
         isPlaying = true
-        animateNextFrame()
+
+        // Timer içinde simülasyonu ilerlet (30 FPS için ~33ms)
+        timer = Timer()
+        timer?.scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                if (isPlaying && currentFrameIndex < sensorDataList.size - 1) {
+                    currentFrameIndex++
+                    handler.post {
+                        updateSimulation(currentFrameIndex)
+                    }
+                } else if (currentFrameIndex >= sensorDataList.size - 1) {
+                    handler.post {
+                        pauseSimulation()
+                        btnPlayPause.text = "Oynat"
+                    }
+                }
+            }
+        }, 0, 33)
     }
 
-    private fun pauseAnimation() {
+    private fun pauseSimulation() {
         isPlaying = false
-        animationHandler.removeCallbacksAndMessages(null)
+        timer?.cancel()
+        timer = null
     }
 
-    private fun resetAnimation() {
-        pauseAnimation()
+    private fun resetSimulation() {
+        pauseSimulation()
         currentFrameIndex = 0
-        if (sensorDataList.isNotEmpty()) {
-            updatePhone(sensorDataList[0])
-        }
-        seekBarSimulation.progress = 0
-        tvSimulationProgress.text = "İlerleme: 0%"
+        updateSimulation(currentFrameIndex)
         btnPlayPause.text = "Oynat"
     }
 
-    private fun animateNextFrame() {
-        if (!isPlaying || currentFrameIndex >= sensorDataList.size - 1) {
-            isPlaying = false
-            btnPlayPause.text = "Oynat"
-            return
-        }
+    private fun updateSimulation(frameIndex: Int) {
+        if (frameIndex < 0 || frameIndex >= sensorDataList.size) return
 
-        // Mevcut kareyi göster
-        updatePhone(sensorDataList[currentFrameIndex])
+        val progress = (frameIndex * 100) / (sensorDataList.size - 1)
+        tvSimulationProgress.text = "İlerleme: %$progress"
+        seekBarSimulation.progress = frameIndex
 
-        // İlerlemeyi güncelle
-        val progress = currentFrameIndex * 100 / (sensorDataList.size - 1)
-        tvSimulationProgress.text = "İlerleme: $progress%"
-        seekBarSimulation.progress = currentFrameIndex
+        // Sensör verilerini renderer'a ilet
+        val data = sensorDataList[frameIndex]
 
-        // Sonraki kareye geç
-        currentFrameIndex++
+        // İvme ve rotasyon değerlerini phone renderer'a aktar
+        // Eğer varsa, lineer ivme ve yerçekimi verilerini de aktar
+        phoneRenderer.updatePhonePosition(
+            data.x, data.y, data.z,
+            data.rotX, data.rotY, data.rotZ,
+            data.gravX, data.gravY, data.gravZ,
+            data.linAccX, data.linAccY, data.linAccZ
+        )
 
-        // 100ms (10fps) sonra bir sonraki kareyi göster
-        animationHandler.postDelayed({ animateNextFrame() }, 100)
+        // Render işlemini tetikle
+        glSurfaceView.requestRender()
     }
 
-    private fun updatePhone(data: SensorData) {
-        try {
-            phoneNode?.let { phone ->
-                // İvme değerlerini doğrudan pozisyon olarak kullan (daha görünür olması için ölçeklendir)
-                val posX = data.x * 0.2f
-                val posY = data.y * 0.2f
-                val posZ = (data.z - 9.81f) * 0.2f  // Yerçekimi düzeltmesi
-
-                // Rotasyon değerlerini kullan
-                val rotX = data.rotX * 57.3f  // Radyan -> Derece
-                val rotY = data.rotY * 57.3f
-                val rotZ = data.rotZ * 57.3f
-
-                // Pozisyon ve rotasyonu uygula
-                phone.position = Position(posX, posY, posZ)
-                phone.rotation = Rotation(rotX, rotY, rotZ)
-            }
-        } catch (e: Exception) {
-            Log.e("Fall3DSimulationActivity", "Telefon güncelleme hatası: ${e.message}")
-        }
-    }
-
-    // DataAnalyticsActivity'den kopyalanan dosya okuma fonksiyonu
     private fun readSensorDataFromFile(fileName: String): List<SensorData> {
         val sensorDataList = mutableListOf<SensorData>()
         val file = File(getExternalFilesDir(null), fileName)
@@ -217,37 +209,92 @@ class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
             }
 
             file.bufferedReader().useLines { lines ->
-                // Başlık satırını atla
+                // Başlık satırını al ve incele
+                var headerLine: String? = null
                 var isFirstLine = true
+                var gravityIndices: Triple<Int, Int, Int>? = null
+                var linAccIndices: Triple<Int, Int, Int>? = null
 
                 lines.forEach { line ->
                     if (isFirstLine) {
+                        headerLine = line
                         isFirstLine = false
+
+                        // Başlık satırından indeksleri belirle
+                        val headers = line.split(",")
+
+                        // Yerçekimi indeksleri
+                        val gravXIndex = headers.indexOf("grav_x")
+                        val gravYIndex = headers.indexOf("grav_y")
+                        val gravZIndex = headers.indexOf("grav_z")
+
+                        if (gravXIndex >= 0 && gravYIndex >= 0 && gravZIndex >= 0) {
+                            gravityIndices = Triple(gravXIndex, gravYIndex, gravZIndex)
+                        }
+
+                        // Lineer ivme indeksleri
+                        val linAccXIndex = headers.indexOf("linacc_x")
+                        val linAccYIndex = headers.indexOf("linacc_y")
+                        val linAccZIndex = headers.indexOf("linacc_z")
+
+                        if (linAccXIndex >= 0 && linAccYIndex >= 0 && linAccZIndex >= 0) {
+                            linAccIndices = Triple(linAccXIndex, linAccYIndex, linAccZIndex)
+                        }
+
                         return@forEach
                     }
 
                     if (line.isNotBlank()) {
                         val parts = line.split(",")
                         try {
-                            // Tüm değerleri oku - en az 4 sütun olmalı
+                            // Temel değerleri oku - en az 4 sütun olmalı
                             if (parts.size >= 4) {
                                 val timestamp = parts[0].toLong()
                                 val x = parts[1].toFloat()
                                 val y = parts[2].toFloat()
                                 val z = parts[3].toFloat()
 
-                                // Ek verileri varsa ekle
+                                // Rotasyon değerlerini oku (varsa)
                                 val rotX = if (parts.size > 4) parts[4].toFloatOrNull() ?: 0f else 0f
                                 val rotY = if (parts.size > 5) parts[5].toFloatOrNull() ?: 0f else 0f
                                 val rotZ = if (parts.size > 6) parts[6].toFloatOrNull() ?: 0f else 0f
+
+                                // Gyro değerlerini oku (varsa)
                                 val gyroX = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f
                                 val gyroY = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f
                                 val gyroZ = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f
 
+                                // Lineer ivme değerlerini oku (varsa)
+                                var linAccX = 0f
+                                var linAccY = 0f
+                                var linAccZ = 0f
+                                linAccIndices?.let { indices ->
+                                    if (parts.size > indices.third) {
+                                        linAccX = parts[indices.first].toFloatOrNull() ?: 0f
+                                        linAccY = parts[indices.second].toFloatOrNull() ?: 0f
+                                        linAccZ = parts[indices.third].toFloatOrNull() ?: 0f
+                                    }
+                                }
+
+                                // Yerçekimi değerlerini oku (varsa)
+                                var gravX = 0f
+                                var gravY = 0f
+                                var gravZ = 0f
+                                gravityIndices?.let { indices ->
+                                    if (parts.size > indices.third) {
+                                        gravX = parts[indices.first].toFloatOrNull() ?: 0f
+                                        gravY = parts[indices.second].toFloatOrNull() ?: 0f
+                                        gravZ = parts[indices.third].toFloatOrNull() ?: 0f
+                                    }
+                                }
+
+                                // SensorData nesnesini oluştur
                                 sensorDataList.add(SensorData(
                                     timestamp, x, y, z,
                                     rotX, rotY, rotZ,
-                                    gyroX, gyroY, gyroZ
+                                    gyroX, gyroY, gyroZ,
+                                    linAccX, linAccY, linAccZ,
+                                    gravX, gravY, gravZ
                                 ))
                             }
                         } catch (e: NumberFormatException) {
@@ -267,9 +314,27 @@ class Fall3DSimulationActivity(var modelScale: Float) : AppCompatActivity() {
         return sensorDataList
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        pauseAnimation()
-        sceneView.destroy()
+    // Activity yaşam döngüsü ile OpenGL ES view'ı senkronize et
+    override fun onPause() {
+        super.onPause()
+        pauseSimulation()
+        glSurfaceView.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        glSurfaceView.onResume()
+    }
+
+    // Geri düğmesi için destek
+    override fun onSupportNavigateUp(): Boolean {
+        onBackPressed()
+        return true
+    }
+
+    // Özel animasyonlu geri dönüş
+    override fun onBackPressed() {
+        super.onBackPressed()
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 }
