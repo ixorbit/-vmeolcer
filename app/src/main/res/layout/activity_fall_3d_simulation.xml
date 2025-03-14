@@ -45,14 +45,39 @@
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
         android:background="#1E1E1E"
-        app:layout_constraintBottom_toTopOf="@+id/controlPanel"
+        app:layout_constraintBottom_toTopOf="@+id/playbackControls"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvSimulationInfo" />
 
+    <!-- Kalibrasyon butonu -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/btnCalibrate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="16dp"
+        app:cardBackgroundColor="#3F51B5"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp"
+        app:layout_constraintEnd_toEndOf="@+id/sceneContainer"
+        app:layout_constraintTop_toTopOf="@+id/sceneContainer">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="8dp"
+            android:text="Kalibre Et"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+    </androidx.cardview.widget.CardView>
+
     <!-- Kontrol paneli -->
     <androidx.cardview.widget.CardView
-        android:id="@+id/controlPanel"
+        android:id="@+id/playbackControls"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"

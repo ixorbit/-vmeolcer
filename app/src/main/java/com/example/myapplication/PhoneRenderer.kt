@@ -13,10 +13,11 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
- * OpenGL ES 2.0 kullanarak telefon modeli çizen sınıf
- * Geliştirilmiş sensör verisi filtreleme ile
+ * OpenGL ES 2.0 kullanarak telefon modeli çizen ve sensör verilerine göre hareket ettiren sınıf
+ * İyileştirilmiş model oryantasyonu ve filtreleme ile
  */
 class PhoneRenderer : GLSurfaceView.Renderer {
 
@@ -25,6 +26,7 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private val mProjectionMatrix = FloatArray(16)
     private val mViewMatrix = FloatArray(16)
     private val mModelMatrix = FloatArray(16)
+    private val mRotationMatrix = FloatArray(16) // Yeni: rotasyon için ayrı bir matris
 
     // Shader program
     private var mProgram = 0
@@ -36,6 +38,9 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private var rotX = 0f
     private var rotY = 0f
     private var rotZ = 0f
+    private var magX = 0f // Pusula sensörü için X değeri
+    private var magY = 0f // Pusula sensörü için Y değeri
+    private var magZ = 0f // Pusula sensörü için Z değeri
 
     // Filtre parametreleri - filtrelenmiş değerler
     private var filteredRotX = 0f
@@ -44,14 +49,15 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private var filteredPosX = 0f
     private var filteredPosY = 0f
     private var filteredPosZ = 0f
+    private var deviceOrientation = FloatArray(3) { 0f } // Yeni: cihaz oryantasyonu
 
-    // Filtreleme için önceki değerler - yeni eklendi
-    private var prevAccelX = 0f
-    private var prevAccelY = 0f
-    private var prevAccelZ = 0f
-    private var prevGyroX = 0f
-    private var prevGyroY = 0f
-    private var prevGyroZ = 0f
+    // Filtreleme için önceki değerler
+    private var prevRotX = 0f
+    private var prevRotY = 0f
+    private var prevRotZ = 0f
+    private var prevPosX = 0f
+    private var prevPosY = 0f
+    private var prevPosZ = 0f
 
     // Yerçekimi ve lineer ivme değerleri - fizik için
     private var gravityX = 0f
@@ -61,23 +67,36 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private var linAccY = 0f
     private var linAccZ = 0f
 
+    // Kalibrasyon değerleri
+    private var offsetRotX = 0f
+    private var offsetRotY = 0f
+    private var offsetRotZ = 0f
+    private var isCalibrated = false
+
     // Filtreleme katsayıları - bu değerler titreşimi azaltmak için ayarlanabilir
-    private val ACCEL_FILTER_ALPHA = 0.08f  // Düşük değer = daha az titreşim, daha gecikmeli
-    private val GYRO_FILTER_ALPHA = 0.15f   // Gyro için biraz daha hızlı tepki
-    private val COMP_FILTER_ALPHA = 0.02f   // Complementary filtre katsayısı
+    private val ACCEL_FILTER_ALPHA = 0.06f  // İvme için güçlü filtreleme (0.06)
+    private val GYRO_FILTER_ALPHA = 0.1f    // Jiroskop için orta düzey filtreleme (0.1)
+    private val COMP_FILTER_ALPHA = 0.02f   // Complementary filtre için düşük değer (0.02)
+    private val MAG_FILTER_ALPHA = 0.05f    // Pusula için güçlü filtreleme (0.05)
 
     // Ölçekleme faktörleri
-    private val ACCELERATION_SCALE = 0.05f // İvmeyi azaltmak için ölçekleme faktörü
-    private val ROTATION_SCALE = 0.6f      // Rotasyonu azaltmak için ölçekleme faktörü
+    private val POSITION_SCALE = 0.03f      // Konum değişimi için ölçekleme (daha az hareket)
+    private val ROTATION_SCALE = 1.0f       // Rotasyon için tam ölçek (gerçekçi dönüş)
+
+    // Arka plan rengi ve zemin tekstür değişkenleri
+    private val bgColorR = 0.02f  // Koyu mavi tonları
+    private val bgColorG = 0.02f
+    private val bgColorB = 0.05f
+    private val bgColorA = 1.0f
 
     // Fizik simülasyonu için
     private var velocity = Vector3(0f, 0f, 0f)
-    private var isInFreeFall = false
     private var lastUpdateTime = System.nanoTime()
 
     // OpenGL nesneleri
     private var phoneModel: Phone? = null
     private var floor: Floor? = null
+    private var grid: Grid? = null  // Yeni: ızgara eklendi
 
     // Vertex shader kodu - değişmedi
     private val vertexShaderCode =
@@ -99,8 +118,8 @@ class PhoneRenderer : GLSurfaceView.Renderer {
                 "}"
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        // Arka plan rengini ayarla - koyu mavi-gri
-        GLES20.glClearColor(0.05f, 0.05f, 0.1f, 1.0f)
+        // Arka plan rengini ayarla - daha koyu ton
+        GLES20.glClearColor(bgColorR, bgColorG, bgColorB, bgColorA)
 
         // Derinlik testini etkinleştir
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
@@ -114,6 +133,12 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Zemin modelini oluştur
         floor = Floor(mProgram)
 
+        // Izgara modelini oluştur
+        grid = Grid(mProgram)
+
+        // Rotasyon matrisini başlat
+        Matrix.setIdentityM(mRotationMatrix, 0)
+
         // Log bilgisi
         Log.d("PhoneRenderer", "OpenGL surface oluşturuldu")
     }
@@ -124,13 +149,13 @@ class PhoneRenderer : GLSurfaceView.Renderer {
 
         // Projeksiyon matrisini hesapla
         val ratio = width.toFloat() / height
-        Matrix.frustumM(mProjectionMatrix, 0, -ratio, ratio, -1f, 1f, 2f, 20f)
+        Matrix.frustumM(mProjectionMatrix, 0, -ratio, ratio, -1f, 1f, 1f, 40f)
 
-        // Kamera pozisyonunu ayarla
+        // Kamera pozisyonunu ayarla - daha uzaktan bak
         Matrix.setLookAtM(mViewMatrix, 0,
-            0f, 2f, 5f,  // Kamera pozisyonu (x, y, z)
-            0f, 0f, 0f,  // Bakış noktası (look-at point)
-            0f, 1f, 0f   // Yukarı vektörü (up vector)
+            0f, 4f, 10f,  // Kamera pozisyonu (x, y, z) - daha yüksekten ve uzaktan bak
+            0f, 0f, 0f,   // Bakış noktası (look-at point)
+            0f, 1f, 0f    // Yukarı vektörü (up vector)
         )
     }
 
@@ -144,7 +169,19 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Shader programını kullan
         GLES20.glUseProgram(mProgram)
 
-        // Model matrisi - zemin için
+        // ---- IZGARAYI ÇİZ ----
+        Matrix.setIdentityM(mModelMatrix, 0)
+        // Izgarayı yatay tutuyoruz, ancak daha aşağıda konumlandırıyoruz
+        Matrix.translateM(mModelMatrix, 0, 0f, -2f, 0f)
+
+        // Model-View-Projection matrisini hesapla
+        Matrix.multiplyMM(mMVPMatrix, 0, mViewMatrix, 0, mModelMatrix, 0)
+        Matrix.multiplyMM(mMVPMatrix, 0, mProjectionMatrix, 0, mMVPMatrix, 0)
+
+        // Izgarayı çiz
+        grid?.draw(mMVPMatrix)
+
+        // ---- ZEMİNİ ÇİZ ----
         Matrix.setIdentityM(mModelMatrix, 0)
         Matrix.translateM(mModelMatrix, 0, 0f, -2f, 0f)  // Zemini aşağıya taşı
 
@@ -155,20 +192,26 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Zemini çiz
         floor?.draw(mMVPMatrix)
 
+        // ---- TELEFONU ÇİZ ----
         // Model matrisi - telefon için
         Matrix.setIdentityM(mModelMatrix, 0)
 
-        // Telefon pozisyonunu ve rotasyonunu uygula - filtrelenmiş değerleri kullan
-        Matrix.translateM(mModelMatrix, 0, filteredPosX * ACCELERATION_SCALE,
-            filteredPosY * ACCELERATION_SCALE,
-            filteredPosZ * ACCELERATION_SCALE)
+        // İlk olarak modeli doğru pozisyona taşı
+        Matrix.translateM(mModelMatrix, 0,
+            filteredPosX * POSITION_SCALE,
+            filteredPosY * POSITION_SCALE,
+            filteredPosZ * POSITION_SCALE)
 
-        // Jiroskop verilerini X ve Y eksenleri için kullan
-        Matrix.rotateM(mModelMatrix, 0, filteredRotX * ROTATION_SCALE, 1f, 0f, 0f)  // X ekseni rotasyonu
-        Matrix.rotateM(mModelMatrix, 0, filteredRotY * ROTATION_SCALE, 0f, 1f, 0f)  // Y ekseni rotasyonu
+        // Sonra rotasyon matrisini uygula (oryantasyon için)
+        // Not: Rotasyonları uygulamadan önce matris çoğaltmasını yap
+        val tempMatrix = FloatArray(16)
+        System.arraycopy(mModelMatrix, 0, tempMatrix, 0, 16)
 
-        // İvmeölçer verisini Z ekseni için kullan
-        Matrix.rotateM(mModelMatrix, 0, filteredRotZ * ROTATION_SCALE, 0f, 0f, 1f)  // Z ekseni rotasyonu
+        // Jiroskop verilerini kullanarak rotasyon matrisini oluştur
+        createRotationMatrix()
+
+        // Rotasyon matrisini modele uygula
+        Matrix.multiplyMM(mModelMatrix, 0, tempMatrix, 0, mRotationMatrix, 0)
 
         // Model-View-Projection matrisini hesapla
         Matrix.multiplyMM(mMVPMatrix, 0, mViewMatrix, 0, mModelMatrix, 0)
@@ -178,8 +221,26 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         phoneModel?.draw(mMVPMatrix)
     }
     /**
+     * Rotasyon matrisini oluşturur
+     * Jiroskop ve pusula verilerini kullanarak daha doğru bir oryantasyon sağlar
+     */
+    private fun createRotationMatrix() {
+        // Önce matrisi sıfırla
+        Matrix.setIdentityM(mRotationMatrix, 0)
+
+        // Jiroskop verilerinden rotasyon yapılıyor
+        // X ve Y eksenleri için jiroskop verileri kullanılır
+        Matrix.rotateM(mRotationMatrix, 0, filteredRotX * ROTATION_SCALE, 1f, 0f, 0f)  // X ekseni rotasyonu
+        Matrix.rotateM(mRotationMatrix, 0, filteredRotY * ROTATION_SCALE, 0f, 1f, 0f)  // Y ekseni rotasyonu
+
+        // Z ekseni rotasyonu için jiroskop veya manyetik alan sensörü kullanılabilir
+        // Burada jiroskop verilerini kullanıyoruz
+        Matrix.rotateM(mRotationMatrix, 0, filteredRotZ * ROTATION_SCALE, 0f, 0f, 1f)  // Z ekseni rotasyonu
+    }
+
+    /**
      * Fizik simülasyonunu güncelle
-     * İyileştirilmiş sürüm: Daha yumuşak hareket ve titreşim filtreleme
+     * İyileştirilmiş sürüm: Daha doğru oryantasyon ve daha az titreşim
      */
     private fun updatePhysics() {
         // Zaman delta hesapla
@@ -190,82 +251,93 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Temel dünya fizik özellikleri
         val GRAVITY_ACCEL = 9.81f // m/s²
         val FLOOR_Y = -2f         // Zemin Y pozisyonu
-        val DAMPING = 0.92f        // Hız sönümlemesi (0-1 arasında)
+        val DAMPING = 0.94f       // Hız sönümlemesi (0-1 arasında) - 0.94 daha yumuşak hareket
 
         // Filtrelenmiş pozisyon değerlerini güncelle (düşük geçiş filtresi)
         filteredPosX = lowPassFilter(posX, filteredPosX, ACCEL_FILTER_ALPHA)
         filteredPosY = lowPassFilter(posY, filteredPosY, ACCEL_FILTER_ALPHA)
         filteredPosZ = lowPassFilter(posZ, filteredPosZ, ACCEL_FILTER_ALPHA)
 
-        // Rotasyon değerlerini güncelle - gyro X ve Y için, accel Z için
-        // Jitter azaltmak için complementary filter kullan
-        filteredRotX = complementaryFilterAngle(rotX, prevGyroX * deltaTime, COMP_FILTER_ALPHA)
-        filteredRotY = complementaryFilterAngle(rotY, prevGyroY * deltaTime, COMP_FILTER_ALPHA)
+        // Rotasyon değerlerini güncelle - cihaz oryantasyonu için
+        // X ve Y için jiroskop verilerini kullan
+        filteredRotX = complementaryFilterAngle(rotX, prevRotX, GYRO_FILTER_ALPHA)
+        filteredRotY = complementaryFilterAngle(rotY, prevRotY, GYRO_FILTER_ALPHA)
 
-        // Z rotasyonu için ivmeölçeri kullan
-        // Z ekseni için düşük geçiş filtresi - Z ekseninin yavaş değişmesi daha doğal görünür
-        filteredRotZ = lowPassFilter(rotZ, filteredRotZ, ACCEL_FILTER_ALPHA / 2f) // Z için daha az titreşim
+        // Z için jiroskop verilerini kullan ya da pusula verilerinden hesapla
+        filteredRotZ = complementaryFilterAngle(rotZ, prevRotZ, GYRO_FILTER_ALPHA)
 
-        // Önceki değerleri kaydet
-        prevGyroX = rotX
-        prevGyroY = rotY
-        prevAccelX = posX
-        prevAccelY = posY
-        prevAccelZ = posZ
+        // Kalibrasyon değerlerini uygula eğer kalibre edilmişse
+        if (isCalibrated) {
+            filteredRotX -= offsetRotX
+            filteredRotY -= offsetRotY
+            filteredRotZ -= offsetRotZ
+        }
 
-        // Lineer ivme büyüklüğünü hesapla (serbest düşüş tespiti için)
-        val linAccMagnitude = kotlin.math.sqrt(
-            linAccX * linAccX + linAccY * linAccY + linAccZ * linAccZ
-        )
+        // Önceki değerleri güncelle
+        prevRotX = filteredRotX
+        prevRotY = filteredRotY
+        prevRotZ = filteredRotZ
+        prevPosX = filteredPosX
+        prevPosY = filteredPosY
+        prevPosZ = filteredPosZ
 
-        // Serbest düşüş tespiti ve simülasyonu
-        isInFreeFall = linAccMagnitude < 0.5f
-
-        if (isInFreeFall) {
-            // Düşüş sırasında yerçekimi etkisini ekle
-            velocity.y -= GRAVITY_ACCEL * deltaTime
-
-            // Hızı kullanarak pozisyonu güncelle
-            filteredPosY += velocity.y * deltaTime
-
-            // Zemine çarpma kontrolü
-            if (filteredPosY < FLOOR_Y) {
-                filteredPosY = FLOOR_Y
-                // Sıçrama efekti (elastik çarpışma)
-                velocity.y = -velocity.y * 0.6f // 60% enerji korunumu
-
-                // Sürtünme etkisi (yatay hızı azalt)
-                velocity.x *= 0.8f
-                velocity.z *= 0.8f
-            }
+        // Yer çekimi etkisi altında pozisyon güncelleme
+        if (gravityY != 0f) {
+            // Yerçekimi etkisi altında yavaşça yere çök
+            velocity.y += (gravityY - 9.8f) * deltaTime * 0.1f
         } else {
-            // Normal hareket - sensör verilerini doğrudan kullan
-            // Position değerleri updatePhonePosition() ile güncellenir
-
-            // Genel bir hız sönümlemesi ekle - hareket daha yumuşak olacak
-            velocity.x *= DAMPING
-            velocity.y *= DAMPING
-            velocity.z *= DAMPING
-
-            // Hafif bir dengeleme ekle - yavaşça yere çök
-            if (filteredPosY > FLOOR_Y && abs(velocity.y) < 0.1f) {
-                filteredPosY = filteredPosY * 0.99f + FLOOR_Y * 0.01f // Yumuşak dengeleme
+            // Yerçekimi sensörü yoksa, varsayılan davranış
+            if (filteredPosY > FLOOR_Y) {
+                velocity.y -= GRAVITY_ACCEL * deltaTime * 0.1f
             }
         }
 
+        // Hızı kullanarak pozisyonu güncelle
+        filteredPosY += velocity.y * deltaTime
+
+        // Zemin kontrolü
+        if (filteredPosY < FLOOR_Y) {
+            filteredPosY = FLOOR_Y
+            velocity.y = 0f
+        }
+
         // Yatay hareket (X ve Z) - lineer ivme verilerini kullan
-        velocity.x += linAccX * deltaTime * 0.1f // Daha yavaş hareket için ölçekle
-        velocity.z += linAccZ * deltaTime * 0.1f
+        if (abs(linAccX) > 0.2f) {  // Küçük değerleri yok say (gürültü azaltmak için)
+            velocity.x += linAccX * deltaTime * 0.1f
+        }
+
+        if (abs(linAccZ) > 0.2f) {  // Küçük değerleri yok say (gürültü azaltmak için)
+            velocity.z += linAccZ * deltaTime * 0.1f
+        }
 
         // Hızı kullanarak yatay pozisyonu güncelle
         filteredPosX += velocity.x * deltaTime
         filteredPosZ += velocity.z * deltaTime
 
-        // Fizik sınırları uygula
-        val MAX_VELOCITY = 10f
+        // Sürtünme etkisi - hız sönümlemesi
+        velocity.x *= DAMPING
+        velocity.y *= DAMPING
+        velocity.z *= DAMPING
+
+        // Fizik sınırları uygula - çok yüksek hızları önle
+        val MAX_VELOCITY = 8f
         velocity.x = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.x))
         velocity.y = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.y))
         velocity.z = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.z))
+    }
+
+    /**
+     * Modeli kalibre et - mevcut jiroskop değerlerini sıfır noktası olarak ayarla
+     * Bu, cihaz düz tutulduğunda modelin de düz durmasını sağlar
+     */
+    fun calibrate() {
+        // Mevcut rotasyon değerlerini offset olarak kaydet
+        offsetRotX = filteredRotX
+        offsetRotY = filteredRotY
+        offsetRotZ = filteredRotZ
+        isCalibrated = true
+
+        Log.d("PhoneRenderer", "Kalibrasyon yapıldı: X=$offsetRotX, Y=$offsetRotY, Z=$offsetRotZ")
     }
 
     /**
@@ -281,36 +353,50 @@ class PhoneRenderer : GLSurfaceView.Renderer {
 
     /**
      * Complementary filtre - jiroskop ve ivmeölçer verilerini birleştirmek için
-     * @param accelAngle İvmeölçerden gelen açı (uzun vadeli referans)
-     * @param gyroAngleDelta Jiroskoptan gelen açı değişimi (kısa vadeli doğruluk)
+     * @param currentValue Mevcut sensör değeri
+     * @param lastValue Son sensör değeri
      * @param alpha Filtre katsayısı (0-1 arası)
-     * @return Filtrelenmiş açı
+     * @return Filtrelenmiş değer
      */
-    private fun complementaryFilterAngle(accelAngle: Float, gyroAngleDelta: Float, alpha: Float): Float {
-        return alpha * accelAngle + (1 - alpha) * (filteredRotX + gyroAngleDelta)
+    private fun complementaryFilterAngle(currentValue: Float, lastValue: Float, alpha: Float): Float {
+        // Ani değişimleri sınırla
+        val maxChange = 2.0f
+        val change = currentValue - lastValue
+        val limitedCurrent = if (abs(change) > maxChange) {
+            lastValue + if (change > 0) maxChange else -maxChange
+        } else {
+            currentValue
+        }
+
+        // Tamamlayıcı filtre uygula
+        return lastValue + alpha * (limitedCurrent - lastValue)
     }
 
     /**
      * Telefon pozisyonunu ve rotasyonunu güncelle
-     * İyileştirilmiş sürüm: İlave sensör verileri ile daha iyi titreşim filtreleme
+     * İyileştirilmiş sürüm: Jiroskop oryantasyonu ve pusula desteği ile
      */
     fun updatePhonePosition(
         x: Float, y: Float, z: Float,
         rx: Float, ry: Float, rz: Float,
         gravX: Float = 0f, gravY: Float = 0f, gravZ: Float = 0f,
-        linearAccX: Float = 0f, linearAccY: Float = 0f, linearAccZ: Float = 0f
+        linearAccX: Float = 0f, linearAccY: Float = 0f, linearAccZ: Float = 0f,
+        magneticX: Float = 0f, magneticY: Float = 0f, magneticZ: Float = 0f  // Pusula verisi
     ) {
-        // Ham değerleri kaydet
+        // Ham sensör değerlerini kaydet
         posX = x
         posY = y
         posZ = z
 
-        // Jiroskop için X ve Y rotasyonlarını kullan
+        // Jiroskop açı değerlerini kaydet
         rotX = rx
         rotY = ry
-
-        // İvmeölçer için Z rotasyonunu kullan (istediğiniz gibi)
         rotZ = rz
+
+        // Pusula değerlerini kaydet
+        magX = magneticX
+        magY = magneticY
+        magZ = magneticZ
 
         // Yerçekimi ve lineer ivme değerlerini güncelle
         gravityX = gravX
@@ -318,10 +404,15 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         gravityZ = gravZ
 
         // Aşırı değişimleri sınırla - ani titreşimleri azaltır
-        val maxAccelChange = 2.5f // m/s² - 2.5 değeri daha az ani değişim sağlar
+        val maxAccelChange = 2.0f // m/s² - daha düşük değer daha az ani değişim sağlar
         linAccX = clampChange(linearAccX, linAccX, maxAccelChange)
         linAccY = clampChange(linearAccY, linAccY, maxAccelChange)
         linAccZ = clampChange(linearAccZ, linAccZ, maxAccelChange)
+
+        // İlk çağrıda modeli kalibre et
+        if (!isCalibrated && rx != 0f && ry != 0f && rz != 0f) {
+            calibrate()
+        }
     }
 
     /**
@@ -336,7 +427,6 @@ class PhoneRenderer : GLSurfaceView.Renderer {
             else -> newValue
         }
     }
-
     /**
      * Shader programı oluştur ve yükle
      */
@@ -397,11 +487,12 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     }
 
     /**
-     * 3D vektör veri sınıfı - değişmedi
+     * 3D vektör veri sınıfı
      */
     data class Vector3(var x: Float, var y: Float, var z: Float)
+
     /**
-     * Telefon modeli sınıfı
+     * Telefon modeli sınıfı - telefonun 3D görüntüsünü oluşturur
      */
     inner class Phone(private val program: Int) {
         // Telefon koordinatları (3D kutu şeklinde)
@@ -439,24 +530,24 @@ class PhoneRenderer : GLSurfaceView.Renderer {
             8, 9, 10, 8, 10, 11
         )
 
-        // Renkler
+        // Renkler - iyileştirilmiş renkler
         private val colors = floatArrayOf(
             // Gövde rengi - koyu gri (6 yüzey, her yüzey 4 köşe)
-            0.2f, 0.2f, 0.2f, 1.0f,  // 0: sol alt ön
-            0.2f, 0.2f, 0.2f, 1.0f,  // 1: sağ alt ön
-            0.2f, 0.2f, 0.2f, 1.0f,  // 2: sağ üst ön
-            0.2f, 0.2f, 0.2f, 1.0f,  // 3: sol üst ön
+            0.3f, 0.3f, 0.32f, 1.0f,  // 0: sol alt ön - biraz daha açık
+            0.3f, 0.3f, 0.32f, 1.0f,  // 1: sağ alt ön
+            0.3f, 0.3f, 0.32f, 1.0f,  // 2: sağ üst ön
+            0.3f, 0.3f, 0.32f, 1.0f,  // 3: sol üst ön
 
-            0.1f, 0.1f, 0.1f, 1.0f,  // 4: sol alt arka
-            0.1f, 0.1f, 0.1f, 1.0f,  // 5: sağ alt arka
-            0.1f, 0.1f, 0.1f, 1.0f,  // 6: sağ üst arka
-            0.1f, 0.1f, 0.1f, 1.0f,  // 7: sol üst arka
+            0.15f, 0.15f, 0.17f, 1.0f,  // 4: sol alt arka - daha koyu
+            0.15f, 0.15f, 0.17f, 1.0f,  // 5: sağ alt arka
+            0.15f, 0.15f, 0.17f, 1.0f,  // 6: sağ üst arka
+            0.15f, 0.15f, 0.17f, 1.0f,  // 7: sol üst arka
 
-            // Ekran rengi - mavi (4 köşe)
-            0.0f, 0.5f, 0.8f, 1.0f,  // 8: sol alt ekran
-            0.0f, 0.5f, 0.8f, 1.0f,  // 9: sağ alt ekran
-            0.0f, 0.5f, 0.8f, 1.0f,  // 10: sağ üst ekran
-            0.0f, 0.5f, 0.8f, 1.0f   // 11: sol üst ekran
+            // Ekran rengi - parlak mavi (4 köşe) - daha parlak
+            0.0f, 0.6f, 0.9f, 1.0f,  // 8: sol alt ekran
+            0.0f, 0.6f, 0.9f, 1.0f,  // 9: sağ alt ekran
+            0.0f, 0.6f, 0.9f, 1.0f,  // 10: sağ üst ekran
+            0.0f, 0.6f, 0.9f, 1.0f   // 11: sol üst ekran
         )
 
         // OpenGL buffer'ları
@@ -550,10 +641,10 @@ class PhoneRenderer : GLSurfaceView.Renderer {
 
         // Zemin koordinatları (kare şeklinde)
         private val coords = floatArrayOf(
-            -10f, 0f, -10f,  // 0: sol arka
-            10f, 0f, -10f,  // 1: sağ arka
-            10f, 0f,  10f,  // 2: sağ ön
-            -10f, 0f,  10f   // 3: sol ön
+            -12f, 0f, -12f,  // 0: sol arka
+            12f, 0f, -12f,  // 1: sağ arka
+            12f, 0f,  12f,  // 2: sağ ön
+            -12f, 0f,  12f   // 3: sol ön
         )
 
         // Yüzey indeksleri
@@ -561,12 +652,12 @@ class PhoneRenderer : GLSurfaceView.Renderer {
             0, 1, 2, 0, 2, 3  // Üst yüz
         )
 
-        // Renkler - ızgara görünümü için iki ton
+        // Renkler - daha koyu zemin rengi
         private val colors = floatArrayOf(
-            0.3f, 0.3f, 0.4f, 1.0f,  // 0: sol arka
-            0.3f, 0.3f, 0.4f, 1.0f,  // 1: sağ arka
-            0.3f, 0.3f, 0.4f, 1.0f,  // 2: sağ ön
-            0.3f, 0.3f, 0.4f, 1.0f   // 3: sol ön
+            0.2f, 0.2f, 0.25f, 1.0f,  // 0: sol arka
+            0.2f, 0.2f, 0.25f, 1.0f,  // 1: sağ arka
+            0.2f, 0.2f, 0.25f, 1.0f,  // 2: sağ ön
+            0.2f, 0.2f, 0.25f, 1.0f   // 3: sol ön
         )
 
         // OpenGL buffer'ları
@@ -646,6 +737,166 @@ class PhoneRenderer : GLSurfaceView.Renderer {
                 GLES20.GL_UNSIGNED_SHORT,
                 indexBuffer
             )
+
+            // Attribute'ları devre dışı bırak
+            GLES20.glDisableVertexAttribArray(positionHandle)
+            GLES20.glDisableVertexAttribArray(colorHandle)
+        }
+    }
+
+    /**
+     * Izgara sınıfı - 3D dünyada ızgara çizer
+     * Hareket yönünü daha iyi görmek için eklendi
+     */
+    inner class Grid(private val program: Int) {
+        // Izgara çizgileri
+        private val lines = mutableListOf<Float>()
+        private val colors = mutableListOf<Float>()
+
+        // Izgara boyutları ve rengi
+        private val gridSize = 12f
+        private val gridStep = 1f
+        private val gridColor = floatArrayOf(0.4f, 0.4f, 0.45f, 0.6f) // Yarı şeffaf gri
+
+        // OpenGL buffer'ları
+        private val vertexBuffer: FloatBuffer
+        private val colorBuffer: FloatBuffer
+
+        // OpenGL attributes
+        private var positionHandle = 0
+        private var colorHandle = 0
+        private var mvpMatrixHandle = 0
+
+        init {
+            // Izgara çizgilerini oluştur
+            // X yönündeki çizgiler
+            for (i in -gridSize.toInt()..gridSize.toInt() step gridStep.toInt()) {
+                // Çizgi başlangıç
+                lines.add(i.toFloat())
+                lines.add(0f)
+                lines.add(-gridSize)
+
+                // Çizgi rengi
+                colors.addAll(gridColor.toList())
+
+                // Çizgi bitiş
+                lines.add(i.toFloat())
+                lines.add(0f)
+                lines.add(gridSize)
+
+                // Çizgi rengi
+                colors.addAll(gridColor.toList())
+            }
+
+            // Z yönündeki çizgiler
+            for (i in -gridSize.toInt()..gridSize.toInt() step gridStep.toInt()) {
+                // Çizgi başlangıç
+                lines.add(-gridSize)
+                lines.add(0f)
+                lines.add(i.toFloat())
+
+                // Çizgi rengi
+                colors.addAll(gridColor.toList())
+
+                // Çizgi bitiş
+                lines.add(gridSize)
+                lines.add(0f)
+                lines.add(i.toFloat())
+
+                // Çizgi rengi
+                colors.addAll(gridColor.toList())
+            }
+
+            // Ana eksenleri vurgula (X ve Z)
+            // X ekseni (kırmızı)
+            lines.add(-gridSize)
+            lines.add(0f)
+            lines.add(0f)
+            colors.add(1f) // Kırmızı
+            colors.add(0f)
+            colors.add(0f)
+            colors.add(1f)
+
+            lines.add(gridSize)
+            lines.add(0f)
+            lines.add(0f)
+            colors.add(1f) // Kırmızı
+            colors.add(0f)
+            colors.add(0f)
+            colors.add(1f)
+
+            // Z ekseni (mavi)
+            lines.add(0f)
+            lines.add(0f)
+            lines.add(-gridSize)
+            colors.add(0f)
+            colors.add(0f)
+            colors.add(1f) // Mavi
+            colors.add(1f)
+
+            lines.add(0f)
+            lines.add(0f)
+            lines.add(gridSize)
+            colors.add(0f)
+            colors.add(0f)
+            colors.add(1f) // Mavi
+            colors.add(1f)
+
+            // Vertex buffer oluştur
+            val linesArray = lines.toFloatArray()
+            vertexBuffer = ByteBuffer.allocateDirect(linesArray.size * 4)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .apply {
+                    put(linesArray)
+                    position(0)
+                }
+
+            // Renk buffer oluştur
+            val colorsArray = colors.toFloatArray()
+            colorBuffer = ByteBuffer.allocateDirect(colorsArray.size * 4)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .apply {
+                    put(colorsArray)
+                    position(0)
+                }
+        }
+
+        fun draw(mvpMatrix: FloatArray) {
+            // Shader attribute ve uniform handle'larını al
+            positionHandle = GLES20.glGetAttribLocation(program, "vPosition")
+            colorHandle = GLES20.glGetAttribLocation(program, "vColor")
+            mvpMatrixHandle = GLES20.glGetUniformLocation(program, "uMVPMatrix")
+
+            // Position attribute'unu etkinleştir
+            GLES20.glEnableVertexAttribArray(positionHandle)
+            GLES20.glVertexAttribPointer(
+                positionHandle,
+                3,  // 3 float per vertex
+                GLES20.GL_FLOAT,
+                false,
+                0,
+                vertexBuffer
+            )
+
+            // Color attribute'unu etkinleştir
+            GLES20.glEnableVertexAttribArray(colorHandle)
+            GLES20.glVertexAttribPointer(
+                colorHandle,
+                4,  // 4 float per color
+                GLES20.GL_FLOAT,
+                false,
+                0,
+                colorBuffer
+            )
+
+            // MVP matrisini ayarla
+            GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0)
+
+            // Izgarayı çiz (çizgiler)
+            GLES20.glLineWidth(1.5f) // Çizgi kalınlığı
+            GLES20.glDrawArrays(GLES20.GL_LINES, 0, lines.size / 3)
 
             // Attribute'ları devre dışı bırak
             GLES20.glDisableVertexAttribArray(positionHandle)

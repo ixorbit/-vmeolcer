@@ -1,10 +1,16 @@
 package com.example.myapplication
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.SeekBar
@@ -16,13 +22,14 @@ import java.io.IOException
 import java.util.Timer
 import java.util.TimerTask
 
-class Fall3DSimulationActivity : AppCompatActivity() {
+class Fall3DSimulationActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var glSurfaceView: GLSurfaceView
     private lateinit var phoneRenderer: PhoneRenderer
     private lateinit var sensorDataList: List<SensorData>
     private lateinit var btnPlayPause: Button
     private lateinit var btnReset: Button
+    private lateinit var btnCalibrate: Button
     private lateinit var seekBarSimulation: SeekBar
     private lateinit var tvSimulationProgress: TextView
     private lateinit var tvSimulationInfo: TextView
@@ -33,16 +40,21 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     private var timer: Timer? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    // Ek filtreleme parametreleri
-    private var lastAccelX = 0f
-    private var lastAccelY = 0f
-    private var lastAccelZ = 0f
-    private var lastRotX = 0f
-    private var lastRotY = 0f
-    private var lastRotZ = 0f
+    // Gerçek zamanlı sensör verileri için
+    private lateinit var sensorManager: SensorManager
+    private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
+    private var magnetometer: Sensor? = null
+    private var isRealtimeMode = false
 
-    // Filtreleme için katsayılar
-    private val FILTER_ALPHA = 0.2f // 0.2 değeri jitteri azaltacak (0-1 arası)
+    // Son sensör değerleri
+    private var lastAccelValues = FloatArray(3) { 0f }
+    private var lastGyroValues = FloatArray(3) { 0f }
+    private var lastMagValues = FloatArray(3) { 0f }
+
+    // Oryantasyon hesaplama matrisleri
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,35 +70,48 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         // UI elemanlarını bağla
         btnPlayPause = findViewById(R.id.btnPlayPause)
         btnReset = findViewById(R.id.btnReset)
+        btnCalibrate = findViewById(R.id.btnCalibrate) // Kalibrasyon butonu eklenmeli layout'a
         seekBarSimulation = findViewById(R.id.seekBarSimulation)
         tvSimulationProgress = findViewById(R.id.tvSimulationProgress)
         tvSimulationInfo = findViewById(R.id.tvSimulationInfo)
         glContainer = findViewById(R.id.sceneContainer) // Layout'taki FrameLayout
 
+        // Sensor manager'ı başlat
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+
         // Intent'ten dosya adını al
         val fileName = intent.getStringExtra("FILE_NAME") ?: ""
-        if (fileName.isEmpty()) {
-            Toast.makeText(this, "Dosya bulunamadı", Toast.LENGTH_SHORT).show()
-            finish()
-            return
-        }
 
-        // Dosyadan verileri oku
-        sensorDataList = readSensorDataFromFile(fileName)
-        if (sensorDataList.isEmpty()) {
-            Toast.makeText(this, "Veri okunamadı", Toast.LENGTH_SHORT).show()
-            finish()
-            return
+        // Eğer bir dosya adı belirtilmişse, dosyadan verileri oku
+        if (fileName.isNotEmpty()) {
+            sensorDataList = readSensorDataFromFile(fileName)
+            if (sensorDataList.isEmpty()) {
+                Toast.makeText(this, "Dosya verisi okunamadı, gerçek zamanlı moda geçiliyor", Toast.LENGTH_SHORT).show()
+                isRealtimeMode = true
+            } else {
+                // Simülasyon bilgilerini göster
+                tvSimulationInfo.text = "Dosya Simülasyonu: ${sensorDataList.size} veri noktası"
+                setupUIControls()
+            }
+        } else {
+            // Dosya adı yoksa gerçek zamanlı moda geç
+            isRealtimeMode = true
+            tvSimulationInfo.text = "Gerçek Zamanlı Mod"
+            // Gerçek zamanlı modda oynatma kontrollerini gösterme
+            findViewById<View>(R.id.playbackControls).visibility = View.GONE
         }
-
-        // Simülasyon bilgilerini göster
-        tvSimulationInfo.text = "Sensör Verisi Simülasyonu: ${sensorDataList.size} veri noktası"
 
         // OpenGL ES view oluştur ve ayarla
         setupGLView()
 
-        // UI kontrollerini ayarla
-        setupUIControls()
+        // Kalibrasyon butonu
+        btnCalibrate.setOnClickListener {
+            phoneRenderer.calibrate()
+            Toast.makeText(this, "Sensörler kalibre edildi", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupGLView() {
@@ -151,6 +176,8 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     }
 
     private fun startSimulation() {
+        if (isRealtimeMode) return
+
         isPlaying = true
 
         // Timer içinde simülasyonu ilerlet (30 FPS için ~33ms)
@@ -183,17 +210,11 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         currentFrameIndex = 0
         updateSimulation(currentFrameIndex)
         btnPlayPause.text = "Oynat"
-
-        // Filtreleme değerlerini de sıfırla
-        lastAccelX = 0f
-        lastAccelY = 0f
-        lastAccelZ = 0f
-        lastRotX = 0f
-        lastRotY = 0f
-        lastRotZ = 0f
     }
 
     private fun updateSimulation(frameIndex: Int) {
+        if (isRealtimeMode) return
+
         if (frameIndex < 0 || frameIndex >= sensorDataList.size) return
 
         val progress = (frameIndex * 100) / (sensorDataList.size - 1)
@@ -203,30 +224,13 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         // Sensör verilerini renderer'a ilet
         val data = sensorDataList[frameIndex]
 
-        // Filtreleme ekleyerek sensör verilerini yumuşat
-        val filteredAccelX = lowPassFilter(data.x, lastAccelX, FILTER_ALPHA)
-        val filteredAccelY = lowPassFilter(data.y, lastAccelY, FILTER_ALPHA)
-        val filteredAccelZ = lowPassFilter(data.z, lastAccelZ, FILTER_ALPHA)
-
-        val filteredRotX = lowPassFilter(data.rotX, lastRotX, FILTER_ALPHA)
-        val filteredRotY = lowPassFilter(data.rotY, lastRotY, FILTER_ALPHA)
-        val filteredRotZ = lowPassFilter(data.rotZ, lastRotZ, FILTER_ALPHA)
-
-        // Son filtrelenmiş değerleri sakla
-        lastAccelX = filteredAccelX
-        lastAccelY = filteredAccelY
-        lastAccelZ = filteredAccelZ
-        lastRotX = filteredRotX
-        lastRotY = filteredRotY
-        lastRotZ = filteredRotZ
-
         // İvme ve rotasyon değerlerini phone renderer'a aktar
-        // Güncellenmiş PhoneRenderer sensör değerlerini daha iyi filtreleyecek
         phoneRenderer.updatePhonePosition(
-            filteredAccelX, filteredAccelY, filteredAccelZ,
-            filteredRotX, filteredRotY, filteredRotZ,
+            data.x, data.y, data.z,
+            data.rotX, data.rotY, data.rotZ,
             data.gravX, data.gravY, data.gravZ,
-            data.linAccX, data.linAccY, data.linAccZ
+            data.linAccX, data.linAccY, data.linAccZ,
+            0f, 0f, 0f  // Manyetik alan verisi yoksa 0 gönder
         )
 
         // Render işlemini tetikle
@@ -234,10 +238,103 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     }
 
     /**
-     * Basit bir düşük geçiş filtresi - titreşim azaltma
+     * Gerçek zamanlı sensör verilerini işle
      */
-    private fun lowPassFilter(input: Float, lastOutput: Float, alpha: Float): Float {
-        return lastOutput + alpha * (input - lastOutput)
+    override fun onSensorChanged(event: SensorEvent) {
+        if (!isRealtimeMode) return
+
+        when (event.sensor.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                System.arraycopy(event.values, 0, lastAccelValues, 0, 3)
+
+                // Yerçekimi ve lineer ivme hesapla (eğer bu sensör yoksa)
+                val alpha = 0.8f
+                val gravity = FloatArray(3)
+                val linearAccel = FloatArray(3)
+
+                // Yerçekimi bileşenini ayır
+                gravity[0] = alpha * gravity[0] + (1 - alpha) * event.values[0]
+                gravity[1] = alpha * gravity[1] + (1 - alpha) * event.values[1]
+                gravity[2] = alpha * gravity[2] + (1 - alpha) * event.values[2]
+
+                // Lineer ivmeyi hesapla (toplam ivme - yerçekimi)
+                linearAccel[0] = event.values[0] - gravity[0]
+                linearAccel[1] = event.values[1] - gravity[1]
+                linearAccel[2] = event.values[2] - gravity[2]
+
+                // Sensör verileri ile telefon modelini güncelle
+                updatePhoneModelWithSensors(
+                    event.values[0], event.values[1], event.values[2],
+                    lastGyroValues[0], lastGyroValues[1], lastGyroValues[2],
+                    gravity[0], gravity[1], gravity[2],
+                    linearAccel[0], linearAccel[1], linearAccel[2],
+                    lastMagValues[0], lastMagValues[1], lastMagValues[2]
+                )
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                System.arraycopy(event.values, 0, lastGyroValues, 0, 3)
+
+                // Sensör verileri ile telefon modelini güncelle
+                updatePhoneModelWithSensors(
+                    lastAccelValues[0], lastAccelValues[1], lastAccelValues[2],
+                    event.values[0], event.values[1], event.values[2],
+                    0f, 0f, 0f, // Yerçekimi verisi yok
+                    0f, 0f, 0f, // Lineer ivme verisi yok
+                    lastMagValues[0], lastMagValues[1], lastMagValues[2]
+                )
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                System.arraycopy(event.values, 0, lastMagValues, 0, 3)
+
+                // Manyetik alan ve ivmeölçer verilerinden cihaz oryantasyonunu hesapla
+                if (SensorManager.getRotationMatrix(rotationMatrix, null, lastAccelValues, event.values)) {
+                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
+
+                    // Radyan değerlerini dereceye çevir
+                    val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat() // Z eksen dönüşü
+                    val pitch = Math.toDegrees(orientationAngles[1].toDouble()).toFloat()   // X eksen dönüşü
+                    val roll = Math.toDegrees(orientationAngles[2].toDouble()).toFloat()    // Y eksen dönüşü
+
+                    // Log.d("Orientation", "Azimuth: $azimuth, Pitch: $pitch, Roll: $roll")
+
+                    // Oryantasyon değerleri ile telefon modelini güncelle
+                    updatePhoneModelWithSensors(
+                        lastAccelValues[0], lastAccelValues[1], lastAccelValues[2],
+                        pitch, roll, azimuth, // Oryantasyon açıları
+                        0f, 0f, 0f, // Yerçekimi verisi yok
+                        0f, 0f, 0f, // Lineer ivme verisi yok
+                        event.values[0], event.values[1], event.values[2]
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Sensör doğruluk değişimlerini burada işleyebiliriz
+    }
+
+    /**
+     * Gerçek zamanlı sensör verileri ile telefon modelini güncelle
+     */
+    private fun updatePhoneModelWithSensors(
+        accelX: Float, accelY: Float, accelZ: Float,
+        gyroX: Float, gyroY: Float, gyroZ: Float,
+        gravX: Float, gravY: Float, gravZ: Float,
+        linAccX: Float, linAccY: Float, linAccZ: Float,
+        magX: Float, magY: Float, magZ: Float
+    ) {
+        // Telefon modelini güncelle
+        phoneRenderer.updatePhonePosition(
+            accelX, accelY, accelZ,
+            gyroX, gyroY, gyroZ,
+            gravX, gravY, gravZ,
+            linAccX, linAccY, linAccZ,
+            magX, magY, magZ
+        )
+
+        // Render işlemini tetikle
+        glSurfaceView.requestRender()
     }
 
     private fun readSensorDataFromFile(fileName: String): List<SensorData> {
@@ -357,16 +454,34 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         return sensorDataList
     }
 
-    // Activity yaşam döngüsü ile OpenGL ES view'ı senkronize et
+    // Activity yaşam döngüsü ile OpenGL ES view'ı ve sensörleri senkronize et
+    override fun onResume() {
+        super.onResume()
+        glSurfaceView.onResume()
+
+        // Gerçek zamanlı mod aktifse sensörleri dinlemeye başla
+        if (isRealtimeMode) {
+            accelerometer?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+            gyroscope?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+            magnetometer?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         pauseSimulation()
         glSurfaceView.onPause()
-    }
 
-    override fun onResume() {
-        super.onResume()
-        glSurfaceView.onResume()
+        // Sensör dinlemeyi durdur
+        if (isRealtimeMode) {
+            sensorManager.unregisterListener(this)
+        }
     }
 
     // Geri düğmesi için destek
