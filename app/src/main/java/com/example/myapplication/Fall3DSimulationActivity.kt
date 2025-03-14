@@ -17,6 +17,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import java.io.File
 import java.io.IOException
 import java.util.Timer
@@ -29,7 +30,7 @@ class Fall3DSimulationActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var sensorDataList: List<SensorData>
     private lateinit var btnPlayPause: Button
     private lateinit var btnReset: Button
-    private lateinit var btnCalibrate: Button
+    private lateinit var cardCalibrate: CardView  // CardView olarak değiştirildi
     private lateinit var seekBarSimulation: SeekBar
     private lateinit var tvSimulationProgress: TextView
     private lateinit var tvSimulationInfo: TextView
@@ -70,7 +71,7 @@ class Fall3DSimulationActivity : AppCompatActivity(), SensorEventListener {
         // UI elemanlarını bağla
         btnPlayPause = findViewById(R.id.btnPlayPause)
         btnReset = findViewById(R.id.btnReset)
-        btnCalibrate = findViewById(R.id.btnCalibrate) // Kalibrasyon butonu eklenmeli layout'a
+        cardCalibrate = findViewById(R.id.btnCalibrate) // CardView olarak buluyoruz
         seekBarSimulation = findViewById(R.id.seekBarSimulation)
         tvSimulationProgress = findViewById(R.id.tvSimulationProgress)
         tvSimulationInfo = findViewById(R.id.tvSimulationInfo)
@@ -108,7 +109,7 @@ class Fall3DSimulationActivity : AppCompatActivity(), SensorEventListener {
         setupGLView()
 
         // Kalibrasyon butonu
-        btnCalibrate.setOnClickListener {
+        cardCalibrate.setOnClickListener {
             phoneRenderer.calibrate()
             Toast.makeText(this, "Sensörler kalibre edildi", Toast.LENGTH_SHORT).show()
         }
