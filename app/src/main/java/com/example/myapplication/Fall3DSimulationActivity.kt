@@ -33,6 +33,17 @@ class Fall3DSimulationActivity : AppCompatActivity() {
     private var timer: Timer? = null
     private val handler = Handler(Looper.getMainLooper())
 
+    // Ek filtreleme parametreleri
+    private var lastAccelX = 0f
+    private var lastAccelY = 0f
+    private var lastAccelZ = 0f
+    private var lastRotX = 0f
+    private var lastRotY = 0f
+    private var lastRotZ = 0f
+
+    // Filtreleme için katsayılar
+    private val FILTER_ALPHA = 0.2f // 0.2 değeri jitteri azaltacak (0-1 arası)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_fall_3d_simulation)
@@ -172,6 +183,14 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         currentFrameIndex = 0
         updateSimulation(currentFrameIndex)
         btnPlayPause.text = "Oynat"
+
+        // Filtreleme değerlerini de sıfırla
+        lastAccelX = 0f
+        lastAccelY = 0f
+        lastAccelZ = 0f
+        lastRotX = 0f
+        lastRotY = 0f
+        lastRotZ = 0f
     }
 
     private fun updateSimulation(frameIndex: Int) {
@@ -184,17 +203,41 @@ class Fall3DSimulationActivity : AppCompatActivity() {
         // Sensör verilerini renderer'a ilet
         val data = sensorDataList[frameIndex]
 
+        // Filtreleme ekleyerek sensör verilerini yumuşat
+        val filteredAccelX = lowPassFilter(data.x, lastAccelX, FILTER_ALPHA)
+        val filteredAccelY = lowPassFilter(data.y, lastAccelY, FILTER_ALPHA)
+        val filteredAccelZ = lowPassFilter(data.z, lastAccelZ, FILTER_ALPHA)
+
+        val filteredRotX = lowPassFilter(data.rotX, lastRotX, FILTER_ALPHA)
+        val filteredRotY = lowPassFilter(data.rotY, lastRotY, FILTER_ALPHA)
+        val filteredRotZ = lowPassFilter(data.rotZ, lastRotZ, FILTER_ALPHA)
+
+        // Son filtrelenmiş değerleri sakla
+        lastAccelX = filteredAccelX
+        lastAccelY = filteredAccelY
+        lastAccelZ = filteredAccelZ
+        lastRotX = filteredRotX
+        lastRotY = filteredRotY
+        lastRotZ = filteredRotZ
+
         // İvme ve rotasyon değerlerini phone renderer'a aktar
-        // Eğer varsa, lineer ivme ve yerçekimi verilerini de aktar
+        // Güncellenmiş PhoneRenderer sensör değerlerini daha iyi filtreleyecek
         phoneRenderer.updatePhonePosition(
-            data.x, data.y, data.z,
-            data.rotX, data.rotY, data.rotZ,
+            filteredAccelX, filteredAccelY, filteredAccelZ,
+            filteredRotX, filteredRotY, filteredRotZ,
             data.gravX, data.gravY, data.gravZ,
             data.linAccX, data.linAccY, data.linAccZ
         )
 
         // Render işlemini tetikle
         glSurfaceView.requestRender()
+    }
+
+    /**
+     * Basit bir düşük geçiş filtresi - titreşim azaltma
+     */
+    private fun lowPassFilter(input: Float, lastOutput: Float, alpha: Float): Float {
+        return lastOutput + alpha * (input - lastOutput)
     }
 
     private fun readSensorDataFromFile(fileName: String): List<SensorData> {

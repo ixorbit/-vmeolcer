@@ -10,9 +10,13 @@ import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * OpenGL ES 2.0 kullanarak telefon modeli çizen sınıf
+ * Geliştirilmiş sensör verisi filtreleme ile
  */
 class PhoneRenderer : GLSurfaceView.Renderer {
 
@@ -25,13 +29,29 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     // Shader program
     private var mProgram = 0
 
-    // Telefon konumu ve rotasyonu
+    // Telefon konumu ve rotasyonu - ham değerler
     private var posX = 0f
     private var posY = 0f
     private var posZ = 0f
     private var rotX = 0f
     private var rotY = 0f
     private var rotZ = 0f
+
+    // Filtre parametreleri - filtrelenmiş değerler
+    private var filteredRotX = 0f
+    private var filteredRotY = 0f
+    private var filteredRotZ = 0f
+    private var filteredPosX = 0f
+    private var filteredPosY = 0f
+    private var filteredPosZ = 0f
+
+    // Filtreleme için önceki değerler - yeni eklendi
+    private var prevAccelX = 0f
+    private var prevAccelY = 0f
+    private var prevAccelZ = 0f
+    private var prevGyroX = 0f
+    private var prevGyroY = 0f
+    private var prevGyroZ = 0f
 
     // Yerçekimi ve lineer ivme değerleri - fizik için
     private var gravityX = 0f
@@ -40,6 +60,15 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private var linAccX = 0f
     private var linAccY = 0f
     private var linAccZ = 0f
+
+    // Filtreleme katsayıları - bu değerler titreşimi azaltmak için ayarlanabilir
+    private val ACCEL_FILTER_ALPHA = 0.08f  // Düşük değer = daha az titreşim, daha gecikmeli
+    private val GYRO_FILTER_ALPHA = 0.15f   // Gyro için biraz daha hızlı tepki
+    private val COMP_FILTER_ALPHA = 0.02f   // Complementary filtre katsayısı
+
+    // Ölçekleme faktörleri
+    private val ACCELERATION_SCALE = 0.05f // İvmeyi azaltmak için ölçekleme faktörü
+    private val ROTATION_SCALE = 0.6f      // Rotasyonu azaltmak için ölçekleme faktörü
 
     // Fizik simülasyonu için
     private var velocity = Vector3(0f, 0f, 0f)
@@ -50,7 +79,7 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     private var phoneModel: Phone? = null
     private var floor: Floor? = null
 
-    // Vertex shader kodu
+    // Vertex shader kodu - değişmedi
     private val vertexShaderCode =
         "uniform mat4 uMVPMatrix;" +
                 "attribute vec4 vPosition;" +
@@ -61,7 +90,7 @@ class PhoneRenderer : GLSurfaceView.Renderer {
                 "  fragmentColor = vColor;" +
                 "}"
 
-    // Fragment shader kodu
+    // Fragment shader kodu - değişmedi
     private val fragmentShaderCode =
         "precision mediump float;" +
                 "varying vec4 fragmentColor;" +
@@ -129,11 +158,17 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Model matrisi - telefon için
         Matrix.setIdentityM(mModelMatrix, 0)
 
-        // Telefon pozisyonunu ve rotasyonunu uygula
-        Matrix.translateM(mModelMatrix, 0, posX * 0.1f, posY * 0.1f, posZ * 0.1f)
-        Matrix.rotateM(mModelMatrix, 0, rotX, 1f, 0f, 0f)
-        Matrix.rotateM(mModelMatrix, 0, rotY, 0f, 1f, 0f)
-        Matrix.rotateM(mModelMatrix, 0, rotZ, 0f, 0f, 1f)
+        // Telefon pozisyonunu ve rotasyonunu uygula - filtrelenmiş değerleri kullan
+        Matrix.translateM(mModelMatrix, 0, filteredPosX * ACCELERATION_SCALE,
+            filteredPosY * ACCELERATION_SCALE,
+            filteredPosZ * ACCELERATION_SCALE)
+
+        // Jiroskop verilerini X ve Y eksenleri için kullan
+        Matrix.rotateM(mModelMatrix, 0, filteredRotX * ROTATION_SCALE, 1f, 0f, 0f)  // X ekseni rotasyonu
+        Matrix.rotateM(mModelMatrix, 0, filteredRotY * ROTATION_SCALE, 0f, 1f, 0f)  // Y ekseni rotasyonu
+
+        // İvmeölçer verisini Z ekseni için kullan
+        Matrix.rotateM(mModelMatrix, 0, filteredRotZ * ROTATION_SCALE, 0f, 0f, 1f)  // Z ekseni rotasyonu
 
         // Model-View-Projection matrisini hesapla
         Matrix.multiplyMM(mMVPMatrix, 0, mViewMatrix, 0, mModelMatrix, 0)
@@ -142,9 +177,9 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Telefonu çiz
         phoneModel?.draw(mMVPMatrix)
     }
-
     /**
      * Fizik simülasyonunu güncelle
+     * İyileştirilmiş sürüm: Daha yumuşak hareket ve titreşim filtreleme
      */
     private fun updatePhysics() {
         // Zaman delta hesapla
@@ -155,12 +190,32 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         // Temel dünya fizik özellikleri
         val GRAVITY_ACCEL = 9.81f // m/s²
         val FLOOR_Y = -2f         // Zemin Y pozisyonu
+        val DAMPING = 0.92f        // Hız sönümlemesi (0-1 arasında)
+
+        // Filtrelenmiş pozisyon değerlerini güncelle (düşük geçiş filtresi)
+        filteredPosX = lowPassFilter(posX, filteredPosX, ACCEL_FILTER_ALPHA)
+        filteredPosY = lowPassFilter(posY, filteredPosY, ACCEL_FILTER_ALPHA)
+        filteredPosZ = lowPassFilter(posZ, filteredPosZ, ACCEL_FILTER_ALPHA)
+
+        // Rotasyon değerlerini güncelle - gyro X ve Y için, accel Z için
+        // Jitter azaltmak için complementary filter kullan
+        filteredRotX = complementaryFilterAngle(rotX, prevGyroX * deltaTime, COMP_FILTER_ALPHA)
+        filteredRotY = complementaryFilterAngle(rotY, prevGyroY * deltaTime, COMP_FILTER_ALPHA)
+
+        // Z rotasyonu için ivmeölçeri kullan
+        // Z ekseni için düşük geçiş filtresi - Z ekseninin yavaş değişmesi daha doğal görünür
+        filteredRotZ = lowPassFilter(rotZ, filteredRotZ, ACCEL_FILTER_ALPHA / 2f) // Z için daha az titreşim
+
+        // Önceki değerleri kaydet
+        prevGyroX = rotX
+        prevGyroY = rotY
+        prevAccelX = posX
+        prevAccelY = posY
+        prevAccelZ = posZ
 
         // Lineer ivme büyüklüğünü hesapla (serbest düşüş tespiti için)
         val linAccMagnitude = kotlin.math.sqrt(
-            linAccX * linAccX +
-                    linAccY * linAccY +
-                    linAccZ * linAccZ
+            linAccX * linAccX + linAccY * linAccY + linAccZ * linAccZ
         )
 
         // Serbest düşüş tespiti ve simülasyonu
@@ -171,11 +226,11 @@ class PhoneRenderer : GLSurfaceView.Renderer {
             velocity.y -= GRAVITY_ACCEL * deltaTime
 
             // Hızı kullanarak pozisyonu güncelle
-            posY += velocity.y * deltaTime
+            filteredPosY += velocity.y * deltaTime
 
             // Zemine çarpma kontrolü
-            if (posY < FLOOR_Y) {
-                posY = FLOOR_Y
+            if (filteredPosY < FLOOR_Y) {
+                filteredPosY = FLOOR_Y
                 // Sıçrama efekti (elastik çarpışma)
                 velocity.y = -velocity.y * 0.6f // 60% enerji korunumu
 
@@ -187,9 +242,14 @@ class PhoneRenderer : GLSurfaceView.Renderer {
             // Normal hareket - sensör verilerini doğrudan kullan
             // Position değerleri updatePhonePosition() ile güncellenir
 
+            // Genel bir hız sönümlemesi ekle - hareket daha yumuşak olacak
+            velocity.x *= DAMPING
+            velocity.y *= DAMPING
+            velocity.z *= DAMPING
+
             // Hafif bir dengeleme ekle - yavaşça yere çök
-            if (posY > FLOOR_Y && kotlin.math.abs(velocity.y) < 0.1f) {
-                posY = posY * 0.99f + FLOOR_Y * 0.01f // Yumuşak dengeleme
+            if (filteredPosY > FLOOR_Y && abs(velocity.y) < 0.1f) {
+                filteredPosY = filteredPosY * 0.99f + FLOOR_Y * 0.01f // Yumuşak dengeleme
             }
         }
 
@@ -198,18 +258,41 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         velocity.z += linAccZ * deltaTime * 0.1f
 
         // Hızı kullanarak yatay pozisyonu güncelle
-        posX += velocity.x * deltaTime
-        posZ += velocity.z * deltaTime
+        filteredPosX += velocity.x * deltaTime
+        filteredPosZ += velocity.z * deltaTime
 
         // Fizik sınırları uygula
         val MAX_VELOCITY = 10f
-        velocity.x = kotlin.math.max(-MAX_VELOCITY, kotlin.math.min(MAX_VELOCITY, velocity.x))
-        velocity.y = kotlin.math.max(-MAX_VELOCITY, kotlin.math.min(MAX_VELOCITY, velocity.y))
-        velocity.z = kotlin.math.max(-MAX_VELOCITY, kotlin.math.min(MAX_VELOCITY, velocity.z))
+        velocity.x = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.x))
+        velocity.y = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.y))
+        velocity.z = max(-MAX_VELOCITY, min(MAX_VELOCITY, velocity.z))
+    }
+
+    /**
+     * Düşük geçiş filtresi - titreşim azaltma
+     * @param input Yeni değer
+     * @param lastOutput Son filtrelenmiş değer
+     * @param alpha Filtre katsayısı (0-1 arası), küçük değer = daha fazla filtreleme
+     * @return Filtrelenmiş değer
+     */
+    private fun lowPassFilter(input: Float, lastOutput: Float, alpha: Float): Float {
+        return lastOutput + alpha * (input - lastOutput)
+    }
+
+    /**
+     * Complementary filtre - jiroskop ve ivmeölçer verilerini birleştirmek için
+     * @param accelAngle İvmeölçerden gelen açı (uzun vadeli referans)
+     * @param gyroAngleDelta Jiroskoptan gelen açı değişimi (kısa vadeli doğruluk)
+     * @param alpha Filtre katsayısı (0-1 arası)
+     * @return Filtrelenmiş açı
+     */
+    private fun complementaryFilterAngle(accelAngle: Float, gyroAngleDelta: Float, alpha: Float): Float {
+        return alpha * accelAngle + (1 - alpha) * (filteredRotX + gyroAngleDelta)
     }
 
     /**
      * Telefon pozisyonunu ve rotasyonunu güncelle
+     * İyileştirilmiş sürüm: İlave sensör verileri ile daha iyi titreşim filtreleme
      */
     fun updatePhonePosition(
         x: Float, y: Float, z: Float,
@@ -217,20 +300,41 @@ class PhoneRenderer : GLSurfaceView.Renderer {
         gravX: Float = 0f, gravY: Float = 0f, gravZ: Float = 0f,
         linearAccX: Float = 0f, linearAccY: Float = 0f, linearAccZ: Float = 0f
     ) {
+        // Ham değerleri kaydet
         posX = x
         posY = y
         posZ = z
+
+        // Jiroskop için X ve Y rotasyonlarını kullan
         rotX = rx
         rotY = ry
+
+        // İvmeölçer için Z rotasyonunu kullan (istediğiniz gibi)
         rotZ = rz
 
         // Yerçekimi ve lineer ivme değerlerini güncelle
         gravityX = gravX
         gravityY = gravY
         gravityZ = gravZ
-        linAccX = linearAccX
-        linAccY = linearAccY
-        linAccZ = linearAccZ
+
+        // Aşırı değişimleri sınırla - ani titreşimleri azaltır
+        val maxAccelChange = 2.5f // m/s² - 2.5 değeri daha az ani değişim sağlar
+        linAccX = clampChange(linearAccX, linAccX, maxAccelChange)
+        linAccY = clampChange(linearAccY, linAccY, maxAccelChange)
+        linAccZ = clampChange(linearAccZ, linAccZ, maxAccelChange)
+    }
+
+    /**
+     * Değişimi belirli bir maksimum değerle sınırlar
+     * Aşırı ani değişimleri önlemek için
+     */
+    private fun clampChange(newValue: Float, oldValue: Float, maxChange: Float): Float {
+        val change = newValue - oldValue
+        return when {
+            change > maxChange -> oldValue + maxChange
+            change < -maxChange -> oldValue - maxChange
+            else -> newValue
+        }
     }
 
     /**
@@ -293,15 +397,13 @@ class PhoneRenderer : GLSurfaceView.Renderer {
     }
 
     /**
-     * 3D vektör veri sınıfı
+     * 3D vektör veri sınıfı - değişmedi
      */
     data class Vector3(var x: Float, var y: Float, var z: Float)
-
     /**
      * Telefon modeli sınıfı
      */
     inner class Phone(private val program: Int) {
-
         // Telefon koordinatları (3D kutu şeklinde)
         private val coords = floatArrayOf(
             // Ön yüz
